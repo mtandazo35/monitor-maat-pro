@@ -68,48 +68,30 @@
     </p>
     <button type="submit" class="primary">Guardar asignación</button>
   </form>
+
+  {# Banner critico cuando no tiene plan: explica que esta bloqueado para crear tenants #}
+  <div v-if="!currentPlan && !loading" class="flash flash-error" style="margin:14px 0 0">
+    ⛔ <strong>Bloqueado</strong>: sin plan asignado, este cliente <strong>no puede crear tenants</strong>
+    aunque tenga días restantes. Asigná un plan arriba para habilitarlo.
+  </div>
 </section>
 
-<section id="register-payment-app" class="card" data-user-id="{{ target_id }}" v-cloak>
-  <h2 class="form-section">Registrar pago manual</h2>
-  <p class="muted small">Para pagos hechos fuera de PayPhone (transferencia, efectivo, etc).</p>
-  <form :action="'/users/' + userId + '/payments'" method="post" @submit="onPaymentSubmit">
-    <div class="form-grid-2">
-      <label>Monto
-        <input name="amount" type="number" min="0" step="0.01" v-model="payAmount" required>
-      </label>
-      <label>Moneda
-        <select name="currency" v-model="payCurrency">
-          <option>USD</option>
-          <option>EUR</option>
-          <option>ARS</option>
-          <option>COP</option>
-          <option>MXN</option>
-        </select>
-      </label>
-    </div>
-    <div class="form-grid-2">
-      <label>Días que cubre
-        <input name="days" type="number" min="1" v-model="payDays" required>
-      </label>
-      <label>Método
-        <input name="method" v-model="payMethod" placeholder="transferencia, efectivo, payphone…" maxlength="40">
-      </label>
-    </div>
-    <label>Notas
-      <input name="notes" v-model="payNotes" placeholder="comprobante #, observaciones…" maxlength="200">
-    </label>
-    <p class="muted" style="font-size:.85rem;margin:-4px 0 10px">
-      Cubrirá hasta <strong v-text="previewCoversUntil"></strong>.
-    </p>
-    <div class="row">
-      <button type="submit" class="primary" :disabled="!payAmount || !payDays">Registrar pago</button>
-    </div>
-  </form>
+<section class="card">
+  <h2 class="form-section">Registrar pago</h2>
+  <p class="muted small" style="margin:0 0 12px">
+    Para registrar un pago, usá el botón <strong>"💵 Registrar pago"</strong> en el listado
+    <a href="/billing">/billing</a>. Te abre un modal con el monto del plan asignado prellenado.
+  </p>
+  <a class="btn" href="/billing">← Ir al listado para registrar pago</a>
 
   <hr style="border-color:var(--border);margin:18px 0">
+
   <h3 class="form-section">Cortesía / extensión sin pago</h3>
-  <form :action="'/users/' + userId + '/extend'" method="post" @submit="confirmExtend" class="row">
+  <p class="muted small" style="margin:0 0 10px">
+    Extiende la suscripción del cliente sin cobrar. Útil para regalos, períodos de prueba extendidos, ajustes manuales.
+  </p>
+  <form action="/users/{{ target_id }}/extend" method="post" class="row"
+        onsubmit="return confirm('¿Extender la cuenta de {{ target_username }} sin cobro?')">
     <input name="days" type="number" min="1" value="30" style="max-width:8em">
     <button type="submit" class="btn">+ Extender (sin cobro)</button>
   </form>
@@ -244,6 +226,7 @@ window.addEventListener('DOMContentLoaded', () => {
   createApp({
     setup() {
       const userIdRef = userId;
+      const loading = ref(true);
       const availablePlans = ref([]);
       const currentPlan = ref(null);
       const selectedPlanId = ref('');
@@ -253,51 +236,17 @@ window.addEventListener('DOMContentLoaded', () => {
         selectedPlanId.value = shared.assignedPlan ? String(shared.assignedPlan.id) : '';
       }
       document.addEventListener('billing:loaded', refresh);
-      document.addEventListener('billing:done', refresh);
-      return { userId: userIdRef, availablePlans, currentPlan, selectedPlanId };
+      document.addEventListener('billing:done', () => { loading.value = false; refresh(); });
+      return { userId: userIdRef, loading, availablePlans, currentPlan, selectedPlanId };
     },
     delimiters: ['[[', ']]'],
   }).mount('#assign-plan-app');
 
-  // App 2: registrar pago
-  createApp({
-    setup() {
-      const userIdRef = userId;
-      const payAmount = ref('');
-      const payCurrency = ref('USD');
-      const payDays = ref(30);
-      const payMethod = ref('');
-      const payNotes = ref('');
+  // (App de "registrar pago manual" removida — el flujo de pago vive ahora
+  // en /billing como modal flotante con prefill del plan asignado.
+  // El form de cortesia usa onsubmit=confirm() inline)
 
-      const previewCoversUntil = computed(() => {
-        const days = Number(payDays.value) || 0;
-        if (days <= 0) return '—';
-        const today = todayLocal();
-        let base = today;
-        if (shared.paidUntil) {
-          const cur = new Date(shared.paidUntil + 'T00:00:00Z');
-          if (cur > today) base = cur;
-        }
-        const next = new Date(base.getTime() + days * 86400000);
-        return next.toISOString().slice(0, 10);
-      });
-
-      function onPaymentSubmit(ev) {
-        if (Number(payAmount.value) < 0 || Number(payDays.value) <= 0) ev.preventDefault();
-      }
-      function confirmExtend(ev) {
-        if (!confirm('¿Extender la cuenta de ' + username + ' sin cobro?')) ev.preventDefault();
-      }
-
-      return {
-        userId: userIdRef, payAmount, payCurrency, payDays, payMethod, payNotes,
-        previewCoversUntil, onPaymentSubmit, confirmExtend,
-      };
-    },
-    delimiters: ['[[', ']]'],
-  }).mount('#register-payment-app');
-
-  // App 3: historial
+  // App 2: historial
   createApp({
     setup() {
       const loading = ref(true);

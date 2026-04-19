@@ -150,15 +150,25 @@ def current_user(request: Request) -> dict:
 
 
 def require_paid(request: Request, user: dict) -> None:
-    """Bloquea operaciones que requieren cuenta al día (admin siempre puede)."""
-    if billing.is_paid(user):
+    """Bloquea operaciones que requieren cuenta al día Y plan asignado.
+    Admin siempre puede. Cliente: requiere is_paid + assigned_plan_id."""
+    if user["role"] == "admin":
         return
-    _flash(
-        request,
-        "Tu cuenta no está al día. Renová tu suscripción para crear tenants.",
-        "error",
-    )
-    raise PaymentRequired()
+    # Sin plan asignado: bloqueado independientemente de paid_until
+    if not user.get("assigned_plan_id"):
+        _flash(
+            request,
+            "Tu cuenta aún no tiene un plan asignado. Contactá al administrador para que te asigne uno.",
+            "error",
+        )
+        raise PaymentRequired()
+    if not billing.is_paid(user):
+        _flash(
+            request,
+            "Tu cuenta no está al día. Renová tu suscripción para crear tenants.",
+            "error",
+        )
+        raise PaymentRequired()
 
 
 def current_admin(request: Request) -> dict:

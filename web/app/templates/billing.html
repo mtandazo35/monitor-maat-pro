@@ -73,7 +73,7 @@
             <th>Cliente</th>
             <th>Empresa</th>
             <th>Estado</th>
-            <th>Plan actual</th>
+            <th>Plan asignado</th>
             <th>Pagado hasta</th>
             <th>Días</th>
             <th>Total cobrado</th>
@@ -91,11 +91,11 @@
               <span class="role-pill" :class="paymentBadgeClass(c)" v-text="paymentBadgeLabel(c)"></span>
             </td>
             <td>
-              <template v-if="c.has_payments">
-                <strong v-text="c.last_amount.toFixed(2) + ' ' + c.last_currency"></strong>
-                <span class="muted small"> / [[ c.last_days ]] d</span>
+              <template v-if="c.assigned_plan">
+                <strong v-text="c.assigned_plan.name"></strong>
+                <div class="muted small" v-text="c.assigned_plan.price.toFixed(2) + ' ' + c.assigned_plan.currency + ' / ' + c.assigned_plan.days + 'd'"></div>
               </template>
-              <span v-else class="muted">—</span>
+              <span v-else class="muted small" style="color:#f59e0b">⚠ sin plan</span>
             </td>
             <td v-text="c.paid_until || '—'"></td>
             <td v-text="daysText(c)"></td>
@@ -103,13 +103,9 @@
               <span v-if="totalText(c)" v-text="totalText(c)"></span>
               <span v-else class="muted">—</span>
             </td>
-            <td>
+            <td class="row" style="gap:6px;flex-wrap:nowrap">
               <a class="btn small" :href="'/billing/' + c.id">Gestionar</a>
-              <form :action="'/users/' + c.id + '/extend'" method="post"
-                    class="inline" @submit="confirmExtend($event, c.username)">
-                <input type="hidden" name="days" value="30">
-                <button class="btn small">+ 30 d</button>
-              </form>
+              <button type="button" class="btn small primary" @click="openPaymentModal(c)">💵 Registrar pago</button>
             </td>
           </tr>
         </tbody>
@@ -126,28 +122,107 @@
           <dt>Empresa</dt><dd v-text="c.company_name || '—'"></dd>
           <dt>Plan</dt>
           <dd>
-            <template v-if="c.has_payments">
-              <strong v-text="c.last_amount.toFixed(2) + ' ' + c.last_currency"></strong>
-              <span class="muted small"> / [[ c.last_days ]] días</span>
+            <template v-if="c.assigned_plan">
+              <strong v-text="c.assigned_plan.name"></strong>
+              <div class="muted small" v-text="c.assigned_plan.price.toFixed(2) + ' ' + c.assigned_plan.currency + ' / ' + c.assigned_plan.days + 'd'"></div>
             </template>
-            <span v-else class="muted">—</span>
+            <span v-else class="muted" style="color:#f59e0b">⚠ sin plan asignado</span>
           </dd>
           <dt>Pagado hasta</dt><dd v-text="c.paid_until || '—'"></dd>
           <dt>Días</dt><dd v-text="daysText(c)"></dd>
         </dl>
         <div class="row">
           <a class="btn primary" :href="'/billing/' + c.id">Gestionar</a>
-          <form :action="'/users/' + c.id + '/extend'" method="post"
-                class="inline" @submit="confirmExtend($event, c.username)">
-            <input type="hidden" name="days" value="30">
-            <button class="btn">+ 30 d</button>
-          </form>
+          <button type="button" class="btn primary" @click="openPaymentModal(c)">💵 Registrar pago</button>
         </div>
       </article>
     </div>
   </template>
 
   <p v-if="!loading && !q && clients.length === 0" class="muted">No hay clientes todavía.</p>
+
+  {# === MODAL: Registrar pago === #}
+  <div v-if="modalOpen" class="payment-modal-backdrop" @click.self="closePaymentModal">
+    <div class="payment-modal" role="dialog" aria-modal="true">
+      <div class="payment-modal-head">
+        <h2 style="margin:0">💵 Registrar pago</h2>
+        <button type="button" class="modal-close" @click="closePaymentModal" aria-label="Cerrar">×</button>
+      </div>
+
+      <div class="payment-modal-body">
+        <p class="muted small" style="margin:0 0 14px">
+          Cliente: <strong v-text="modalClient.username"></strong>
+          <span v-if="modalClient.company_name"> — [[ modalClient.company_name ]]</span>
+        </p>
+
+        <template v-if="!modalClient.assigned_plan">
+          <div class="flash flash-error" style="margin:0 0 14px">
+            ⚠ Este cliente <strong>no tiene plan asignado</strong>. Asigná un plan primero
+            desde <a :href="'/billing/' + modalClient.id" style="color:inherit;text-decoration:underline">Gestionar →</a>
+            antes de registrar un pago.
+          </div>
+        </template>
+
+        <template v-else>
+          {# Resumen de lo que debe #}
+          <div class="payment-summary">
+            <div class="ps-row">
+              <span class="ps-label">Plan asignado</span>
+              <span class="ps-value"><strong v-text="modalClient.assigned_plan.name"></strong></span>
+            </div>
+            <div class="ps-row">
+              <span class="ps-label">Monto a facturar</span>
+              <span class="ps-value">
+                <strong style="font-size:1.4rem" v-text="modalClient.assigned_plan.price.toFixed(2) + ' ' + modalClient.assigned_plan.currency"></strong>
+                <span class="muted small">/ [[ modalClient.assigned_plan.days ]] días</span>
+              </span>
+            </div>
+            <div class="ps-row" v-if="modalClient.paid_until">
+              <span class="ps-label">Pagado hasta actualmente</span>
+              <span class="ps-value" v-text="modalClient.paid_until"></span>
+            </div>
+            <div class="ps-row">
+              <span class="ps-label">Cubrirá hasta</span>
+              <span class="ps-value"><strong v-text="modalCoversUntil"></strong></span>
+            </div>
+          </div>
+
+          <form :action="'/users/' + modalClient.id + '/payments'" method="post" @submit="onPaymentSubmit">
+            <div class="form-grid-2" style="margin-top:14px">
+              <label>Monto
+                <input name="amount" type="number" min="0" step="0.01" v-model="payAmount" required>
+              </label>
+              <label>Moneda
+                <select name="currency" v-model="payCurrency">
+                  <option>USD</option>
+                  <option>EUR</option>
+                  <option>ARS</option>
+                  <option>COP</option>
+                  <option>MXN</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-grid-2">
+              <label>Días que cubre
+                <input name="days" type="number" min="1" v-model="payDays" required>
+              </label>
+              <label>Método
+                <input name="method" v-model="payMethod" placeholder="transferencia, efectivo, payphone…" maxlength="40">
+              </label>
+            </div>
+            <label>Notas
+              <input name="notes" v-model="payNotes" placeholder="comprobante #, observaciones…" maxlength="200">
+            </label>
+
+            <div class="row" style="justify-content:flex-end;gap:10px;margin-top:14px;flex-wrap:wrap">
+              <button type="button" class="btn" @click="closePaymentModal">Cancelar</button>
+              <button type="submit" class="primary" :disabled="!payAmount || !payDays">💾 Registrar pago</button>
+            </div>
+          </form>
+        </template>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
@@ -156,6 +231,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('billing-app');
   const initialQ = root.dataset.initialQ || '';
   const REFRESH_MS = 30000;
+  const TZ = 'America/Guayaquil';
+
+  function todayLocal() {
+    const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const parts = fmt.formatToParts(new Date());
+    const get = t => parts.find(p => p.type === t).value;
+    return new Date(`${get('year')}-${get('month')}-${get('day')}T00:00:00Z`);
+  }
 
   const { createApp, ref, computed, onMounted, onBeforeUnmount } = Vue;
 
@@ -166,6 +249,48 @@ window.addEventListener('DOMContentLoaded', () => {
       const clients = ref([]);
       let timer = null;
       let inflight = null;
+
+      // Modal state
+      const modalOpen = ref(false);
+      const modalClient = ref({});
+      const payAmount = ref('');
+      const payCurrency = ref('USD');
+      const payDays = ref(30);
+      const payMethod = ref('');
+      const payNotes = ref('');
+
+      function openPaymentModal(client) {
+        modalClient.value = client;
+        if (client.assigned_plan) {
+          payAmount.value = client.assigned_plan.price.toFixed(2);
+          payDays.value = client.assigned_plan.days;
+          payCurrency.value = client.assigned_plan.currency;
+          payMethod.value = '';
+          payNotes.value = `Plan: ${client.assigned_plan.name}`;
+        }
+        modalOpen.value = true;
+        document.body.style.overflow = 'hidden';
+      }
+      function closePaymentModal() {
+        modalOpen.value = false;
+        document.body.style.overflow = '';
+      }
+      function onPaymentSubmit(ev) {
+        if (Number(payAmount.value) < 0 || Number(payDays.value) <= 0) ev.preventDefault();
+      }
+
+      const modalCoversUntil = computed(() => {
+        const days = Number(payDays.value) || 0;
+        if (days <= 0) return '—';
+        const today = todayLocal();
+        let base = today;
+        if (modalClient.value && modalClient.value.paid_until) {
+          const cur = new Date(modalClient.value.paid_until + 'T00:00:00Z');
+          if (cur > today) base = cur;
+        }
+        const next = new Date(base.getTime() + days * 86400000);
+        return next.toISOString().slice(0, 10);
+      });
 
       const summary = computed(() => {
         const c = clients.value;
@@ -243,21 +368,32 @@ window.addEventListener('DOMContentLoaded', () => {
         const parts = Object.entries(t).map(([cur, v]) => v.toFixed(2) + ' ' + cur);
         return parts.join(' · ');
       }
-      function confirmExtend(ev, username) {
-        if (!confirm('¿Extender 30 días la cuenta de ' + username + ' (sin cobro)?')) ev.preventDefault();
+
+      // Cerrar modal con ESC
+      function onKey(e) {
+        if (e.key === 'Escape' && modalOpen.value) closePaymentModal();
       }
 
-      onMounted(() => { start(); document.addEventListener('visibilitychange', onVis); });
+      onMounted(() => {
+        start();
+        document.addEventListener('visibilitychange', onVis);
+        document.addEventListener('keydown', onKey);
+      });
       onBeforeUnmount(() => {
         stop();
         document.removeEventListener('visibilitychange', onVis);
+        document.removeEventListener('keydown', onKey);
         if (inflight) inflight.abort();
+        document.body.style.overflow = '';
       });
 
       return {
         loading, q, clients, summary,
         onSearch, clearSearch,
-        fullName, paymentBadgeLabel, paymentBadgeClass, daysText, totalText, confirmExtend,
+        fullName, paymentBadgeLabel, paymentBadgeClass, daysText, totalText,
+        modalOpen, modalClient, openPaymentModal, closePaymentModal,
+        payAmount, payCurrency, payDays, payMethod, payNotes,
+        modalCoversUntil, onPaymentSubmit,
       };
     },
     delimiters: ['[[', ']]'],
@@ -275,5 +411,80 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
   @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* ===== MODAL REGISTRAR PAGO ===== */
+  .payment-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, .65);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: modal-fade .15s ease-out;
+  }
+  @keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+  .payment-modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 540px;
+    max-height: 90dvh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    animation: modal-slide .2s ease-out;
+  }
+  @keyframes modal-slide { from { transform: translateY(20px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+  .payment-modal-head {
+    padding: 18px 22px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+    background: var(--panel);
+    z-index: 1;
+  }
+  .modal-close {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 36px; height: 36px;
+    font-size: 1.4rem; line-height: 1;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { background: var(--border); border-color: var(--accent); }
+  .payment-modal-body { padding: 18px 22px 22px; }
+
+  /* Resumen de lo que debe */
+  .payment-summary {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .ps-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 6px 0;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .ps-row + .ps-row { border-top: 1px solid var(--border); }
+  .ps-label { color: var(--muted); font-size: .85rem; }
+  .ps-value { text-align: right; }
+
+  /* Mobile: padding ajustado, modal full-screen feel */
+  @media (max-width: 600px) {
+    .payment-modal-backdrop { padding: 0; align-items: flex-end; }
+    .payment-modal {
+      max-width: 100%;
+      max-height: 95dvh;
+      border-radius: 14px 14px 0 0;
+    }
+    .payment-modal-head { padding: 14px 18px; }
+    .payment-modal-body { padding: 14px 18px 18px; }
+  }
 </style>
 {% endblock %}
