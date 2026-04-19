@@ -154,7 +154,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const initialRole = root.dataset.editRole || 'user';
   const isEdit = root.dataset.isEdit === '1';
   const editCreatedAt = root.dataset.editCreatedAt || '';
-  const editUsername = {{ (edit.username | tojson) if edit else '""' }};
+  const editUsername = {{ (edit.username if edit else "") | tojson | safe }};
 
   const { createApp, ref, computed } = Vue;
   createApp({
