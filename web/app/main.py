@@ -625,7 +625,7 @@ def delete_tenant(
 _USER_PUBLIC_FIELDS = (
     "id", "username", "first_name", "last_name", "company_name",
     "email", "phone", "phone_cc", "role", "tenant_count", "tenant_quota",
-    "created_at", "must_change_password", "paid_until",
+    "created_at", "must_change_password", "paid_until", "assigned_plan_id",
 )
 
 
@@ -633,6 +633,12 @@ def _user_public(u: dict) -> dict:
     out = {k: u.get(k) for k in _USER_PUBLIC_FIELDS}
     out["days_until_due"] = billing.days_until_due(u)
     out["is_paid"] = billing.is_paid(u)
+    plan = billing.get_assigned_plan(u)
+    out["assigned_plan"] = (
+        {"id": plan["id"], "name": plan["name"], "price": plan["price"],
+         "currency": plan["currency"], "days": plan["days"]}
+        if plan else None
+    )
     return out
 
 
@@ -732,6 +738,7 @@ def api_billing_detail(user_id: int, user: dict = Depends(current_admin)):
             "user": _user_public(target),
             "plan": billing.plan_summary(target),
             "payments": billing.list_payments(user_id),
+            "available_plans": billing.list_plans(active_only=True),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -794,6 +801,36 @@ def user_register_payment(
         f"Pago registrado. Cuenta cubierta hasta {payment['covers_until']}.",
         "success",
     )
+    return RedirectResponse(f"/billing/{user_id}", status_code=303)
+
+
+@app.post("/users/{user_id}/assign-plan")
+def user_assign_plan(
+    request: Request,
+    user_id: int,
+    plan_id: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    pid = None
+    if plan_id.strip():
+        try:
+            pid = int(plan_id)
+        except ValueError:
+            _flash(request, "Plan inválido.", "error")
+            return RedirectResponse(f"/billing/{user_id}", status_code=303)
+    try:
+        billing.assign_plan(user_id, pid)
+        plan = billing.get_plan(pid) if pid else None
+        msg = (f"Plan '{plan['name']}' asignado a {target['username']}."
+               if plan else f"Plan desasignado de {target['username']}.")
+        events.log("plan_assigned", "user", actor=user, target_user=target,
+                   details=msg, ip=_client_ip(request))
+        _flash(request, msg, "success")
+    except billing.BillingError as e:
+        _flash(request, str(e), "error")
     return RedirectResponse(f"/billing/{user_id}", status_code=303)
 
 
@@ -1289,7 +1326,7 @@ def me_billing(request: Request, user: dict = Depends(current_user)):
         {
             "request": request, "user": user,
             "plan_summary": billing.plan_summary(user),
-            "plans": billing.list_plans(active_only=True),
+            "assigned_plan": billing.get_assigned_plan(user),
             "payments": billing.list_payments(user["id"]),
             "payphone_ready": payphone.is_configured(),
             "flash": _pop_flash(request),
@@ -1300,18 +1337,22 @@ def me_billing(request: Request, user: dict = Depends(current_user)):
 @app.post("/me/pay")
 def me_pay_start(
     request: Request,
-    plan_id: int = Form(...),
     user: dict = Depends(current_user),
 ):
+    """El cliente paga por su plan asignado (no elige). El admin debe haberle
+    asignado un plan via /users/{id}/assign-plan antes."""
     if user["role"] == "admin":
         _flash(request, "Los administradores no realizan pagos.", "info")
         return RedirectResponse("/", status_code=303)
     if not payphone.is_configured():
         _flash(request, "El método de pago no está disponible. Contactá al administrador.", "error")
         return RedirectResponse("/me/billing", status_code=303)
-    plan = billing.get_plan(plan_id)
-    if not plan or not plan["is_active"]:
-        _flash(request, "Plan inválido o no disponible.", "error")
+    plan = billing.get_assigned_plan(user)
+    if not plan:
+        _flash(request, "Aún no tenés un plan asignado. Contactá al administrador.", "error")
+        return RedirectResponse("/me/billing", status_code=303)
+    if not plan["is_active"]:
+        _flash(request, f"Tu plan '{plan['name']}' fue desactivado. Contactá al administrador.", "error")
         return RedirectResponse("/me/billing", status_code=303)
 
     cfg = settings.get_payphone_config()

@@ -159,6 +159,8 @@ def init_db() -> None:
             )
         if "payment_warning_sent_for" not in ucols2:
             con.execute("ALTER TABLE users ADD COLUMN payment_warning_sent_for TEXT")
+        if "assigned_plan_id" not in ucols2:
+            con.execute("ALTER TABLE users ADD COLUMN assigned_plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL")
 
         # Migración payments: columnas para tracking de provider (PayPhone)
         pcols = [r[1] for r in con.execute("PRAGMA table_info(payments)").fetchall()]

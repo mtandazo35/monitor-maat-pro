@@ -62,43 +62,50 @@
 </section>
 {% endif %}
 
-{# === Selector de planes para pagar === #}
+{# === Plan asignado + boton pagar === #}
 <section id="planes" class="card">
-  <h2 class="form-section">{% if plan_summary.has_payments %}Renovar suscripción{% else %}Elegí tu plan{% endif %}</h2>
+  <h2 class="form-section">{% if plan_summary.has_payments %}Renovar suscripción{% else %}Pagar suscripción{% endif %}</h2>
 
-  {% if not payphone_ready %}
-  <p class="flash flash-error" style="margin:0 0 14px">
-    El método de pago no está disponible en este momento. Contactá al administrador.
-  </p>
-  {% endif %}
-
-  {% if not plans %}
-  <p class="muted">No hay planes disponibles todavía. Contactá al administrador.</p>
-  {% else %}
-  <div class="plans-grid">
-    {% for plan in plans %}
-    <article class="plan-card">
+  {% if not assigned_plan %}
+    <p class="flash flash-info" style="margin:0">
+      📋 Aún no tenés un plan asignado. Contactá al administrador para que te asigne el plan que corresponde a tu cuenta.
+    </p>
+  {% elif not payphone_ready %}
+    <article class="plan-card" style="max-width:340px">
       <div class="plan-head">
-        <h3>{{ plan.name }}</h3>
-        {% if plan.description %}<p class="muted small">{{ plan.description }}</p>{% endif %}
+        <h3>{{ assigned_plan.name }}</h3>
+        {% if assigned_plan.description %}<p class="muted small">{{ assigned_plan.description }}</p>{% endif %}
       </div>
       <div class="plan-price">
-        <span class="plan-amount">{{ "%.2f"|format(plan.price) }}</span>
-        <span class="plan-currency">{{ plan.currency }}</span>
+        <span class="plan-amount">{{ "%.2f"|format(assigned_plan.price) }}</span>
+        <span class="plan-currency">{{ assigned_plan.currency }}</span>
       </div>
-      <p class="muted small">por {{ plan.days }} día{{ '' if plan.days == 1 else 's' }}</p>
+      <p class="muted small">por {{ assigned_plan.days }} día{{ '' if assigned_plan.days == 1 else 's' }}</p>
+      <button type="button" class="btn primary" style="width:100%" disabled>Pagar con PayPhone</button>
+    </article>
+    <p class="flash flash-error" style="margin:14px 0 0">
+      El método de pago no está disponible en este momento. Contactá al administrador.
+    </p>
+  {% else %}
+    <article class="plan-card" style="max-width:340px">
+      <div class="plan-head">
+        <h3>{{ assigned_plan.name }}</h3>
+        {% if assigned_plan.description %}<p class="muted small">{{ assigned_plan.description }}</p>{% endif %}
+      </div>
+      <div class="plan-price">
+        <span class="plan-amount">{{ "%.2f"|format(assigned_plan.price) }}</span>
+        <span class="plan-currency">{{ assigned_plan.currency }}</span>
+      </div>
+      <p class="muted small">por {{ assigned_plan.days }} día{{ '' if assigned_plan.days == 1 else 's' }}</p>
       <form method="post" action="/me/pay">
-        <input type="hidden" name="plan_id" value="{{ plan.id }}">
-        <button type="submit" class="btn primary" style="width:100%" {% if not payphone_ready %}disabled{% endif %}>
-          Pagar con PayPhone
+        <button type="submit" class="btn primary" style="width:100%">
+          {% if plan_summary.is_paid %}Renovar con PayPhone{% else %}Pagar con PayPhone{% endif %}
         </button>
       </form>
     </article>
-    {% endfor %}
-  </div>
-  <p class="muted small" style="margin-top:12px">
-    💳 El pago se procesa de forma segura por PayPhone. Tu suscripción queda activa apenas se confirma el pago.
-  </p>
+    <p class="muted small" style="margin-top:12px">
+      💳 El pago se procesa de forma segura por PayPhone. Tu suscripción queda activa apenas se confirma el pago.
+    </p>
   {% endif %}
 </section>
 

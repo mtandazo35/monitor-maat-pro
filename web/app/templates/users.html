@@ -24,12 +24,12 @@
       <thead>
         <tr>
           <th>Usuario</th><th>Nombre</th><th>Empresa</th><th>Contacto</th>
-          <th>Rol</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
+          <th>Rol</th><th>Plan</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="n in 4" :key="n">
-          <td v-for="c in 9" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+          <td v-for="c in 10" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
         </tr>
       </tbody>
     </table>
@@ -41,7 +41,7 @@
         <thead>
           <tr>
             <th>Usuario</th><th>Nombre</th><th>Empresa</th><th>Contacto</th>
-            <th>Rol</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
+            <th>Rol</th><th>Plan</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -57,6 +57,16 @@
               <template v-else>—</template>
             </td>
             <td><span class="role-pill" :class="'role-' + u.role" v-text="u.role"></span></td>
+            <td>
+              <template v-if="u.role === 'admin'"><span class="muted small">N/A</span></template>
+              <template v-else-if="u.assigned_plan">
+                <strong v-text="u.assigned_plan.name"></strong>
+                <div class="muted small" v-text="u.assigned_plan.price.toFixed(2) + ' ' + u.assigned_plan.currency + ' / ' + u.assigned_plan.days + 'd'"></div>
+              </template>
+              <template v-else>
+                <span class="muted small" style="color:#f59e0b">sin plan</span>
+              </template>
+            </td>
             <td v-text="u.tenant_count"></td>
             <td>
               <span v-if="u.role === 'admin'" class="muted">∞</span>
@@ -99,6 +109,18 @@
             <span v-text="u.tenant_count"></span>
             <span v-if="u.role !== 'admin'"> / <span v-text="u.tenant_quota || 0"></span></span>
           </dd>
+          <template v-if="u.role !== 'admin'">
+            <dt>Plan</dt>
+            <dd>
+              <template v-if="u.assigned_plan">
+                <strong v-text="u.assigned_plan.name"></strong>
+                <div class="muted small" v-text="u.assigned_plan.price.toFixed(2) + ' ' + u.assigned_plan.currency + ' / ' + u.assigned_plan.days + 'd'"></div>
+              </template>
+              <template v-else>
+                <span class="muted" style="color:#f59e0b">sin plan asignado</span>
+              </template>
+            </dd>
+          </template>
         </dl>
         <div class="row">
           <a class="btn primary" :href="'/users/' + u.id + '/edit'">Editar</a>

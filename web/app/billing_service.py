@@ -255,6 +255,32 @@ def delete_plan(plan_id: int) -> None:
             con.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
 
 
+# ---------------- ASIGNACION DE PLAN A USER ----------------
+
+def assign_plan(user_id: int, plan_id: Optional[int]) -> None:
+    """Asigna (o desasigna si plan_id=None) un plan al usuario.
+    El plan asignado es el que el cliente vera y podra pagar en /me/billing."""
+    if plan_id is not None:
+        plan = get_plan(plan_id)
+        if not plan:
+            raise BillingError("Plan no encontrado.")
+        if not plan["is_active"]:
+            raise BillingError(f"El plan '{plan['name']}' está desactivado.")
+    with connect() as con:
+        con.execute(
+            "UPDATE users SET assigned_plan_id = ? WHERE id = ?",
+            (plan_id, user_id),
+        )
+
+
+def get_assigned_plan(user: dict) -> Optional[dict]:
+    """Devuelve el dict del plan asignado al usuario, o None si no tiene."""
+    pid = user.get("assigned_plan_id") if user else None
+    if not pid:
+        return None
+    return get_plan(pid)
+
+
 # ---------------- PAYPHONE INTEGRATION ----------------
 
 def create_pending_payphone_payment(
@@ -409,6 +435,7 @@ def plan_summary(user: dict) -> dict:
         "last_paid_at": None,
         "last_covers_until": None,
         "total_by_currency": {},
+        "assigned_plan": None,
     }
     if not user or user.get("role") == "admin":
         return summary
@@ -423,6 +450,7 @@ def plan_summary(user: dict) -> dict:
             "last_covers_until": last["covers_until"],
         })
     summary["total_by_currency"] = total_paid_by_currency(user["id"])
+    summary["assigned_plan"] = get_assigned_plan(user)
     return summary
 
 

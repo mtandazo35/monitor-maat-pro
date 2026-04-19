@@ -46,8 +46,33 @@
   </template>
 </section>
 
+<section id="assign-plan-app" class="card" data-user-id="{{ target_id }}" v-cloak>
+  <h2 class="form-section">Plan asignado al cliente</h2>
+  <p class="muted small">El cliente ve este plan en su panel y paga este monto cuando cobra con PayPhone.</p>
+
+  <form :action="'/users/' + userId + '/assign-plan'" method="post">
+    <label>Plan
+      <select name="plan_id" v-model="selectedPlanId">
+        <option value="">— Sin plan asignado —</option>
+        <option v-for="p in availablePlans" :key="p.id" :value="p.id">
+          [[ p.name ]] — [[ p.price.toFixed(2) ]] [[ p.currency ]] / [[ p.days ]]d
+        </option>
+      </select>
+    </label>
+    <p v-if="currentPlan" class="muted small" style="margin: -6px 0 10px">
+      Plan actual: <strong>[[ currentPlan.name ]]</strong>
+      ([[ currentPlan.price.toFixed(2) ]] [[ currentPlan.currency ]] / [[ currentPlan.days ]] días)
+    </p>
+    <p v-else class="muted small" style="margin: -6px 0 10px;color:#f59e0b">
+      ⚠ Sin plan asignado — el cliente no podrá pagar con PayPhone.
+    </p>
+    <button type="submit" class="primary">Guardar asignación</button>
+  </form>
+</section>
+
 <section id="register-payment-app" class="card" data-user-id="{{ target_id }}" v-cloak>
-  <h2 class="form-section">Registrar pago</h2>
+  <h2 class="form-section">Registrar pago manual</h2>
+  <p class="muted small">Para pagos hechos fuera de PayPhone (transferencia, efectivo, etc).</p>
   <form :action="'/users/' + userId + '/payments'" method="post" @submit="onPaymentSubmit">
     <div class="form-grid-2">
       <label>Monto
@@ -137,13 +162,15 @@ window.addEventListener('DOMContentLoaded', () => {
     return new Date(`${get('year')}-${get('month')}-${get('day')}T00:00:00Z`);
   }
 
-  // Estado compartido entre las 3 apps
+  // Estado compartido entre las 4 apps
   const shared = {
     loading: true,
     userInfo: null,
     plan: null,
     payments: [],
     paidUntil: null,
+    availablePlans: [],
+    assignedPlan: null,
   };
 
   async function fetchData() {
@@ -155,7 +182,8 @@ window.addEventListener('DOMContentLoaded', () => {
       shared.plan = d.plan;
       shared.payments = d.payments;
       shared.paidUntil = d.user.paid_until;
-      // Notifico a los 3 apps
+      shared.availablePlans = d.available_plans || [];
+      shared.assignedPlan = d.user.assigned_plan;
       document.dispatchEvent(new CustomEvent('billing:loaded'));
     } finally {
       shared.loading = false;
@@ -211,6 +239,25 @@ window.addEventListener('DOMContentLoaded', () => {
     },
     delimiters: ['[[', ']]'],
   }).mount('#billing-app');
+
+  // App nueva: asignar plan
+  createApp({
+    setup() {
+      const userIdRef = userId;
+      const availablePlans = ref([]);
+      const currentPlan = ref(null);
+      const selectedPlanId = ref('');
+      function refresh() {
+        availablePlans.value = shared.availablePlans;
+        currentPlan.value = shared.assignedPlan;
+        selectedPlanId.value = shared.assignedPlan ? String(shared.assignedPlan.id) : '';
+      }
+      document.addEventListener('billing:loaded', refresh);
+      document.addEventListener('billing:done', refresh);
+      return { userId: userIdRef, availablePlans, currentPlan, selectedPlanId };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#assign-plan-app');
 
   // App 2: registrar pago
   createApp({
