@@ -215,7 +215,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
 <style>
   /* Form en grid: 2 columnas en desktop, 1 en mobile.
-     Action bar full-width abajo, mas extras debajo. */
+     Mobile: ACCESO arriba, DATOS abajo (orden lógico al crear).
+     Desktop: DATOS izquierda, ACCESO derecha (orden visual preferido). */
   .user-form-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -230,7 +231,7 @@ window.addEventListener('DOMContentLoaded', () => {
     .user-form-grid {
       grid-template-columns: 1fr 1fr;
       grid-template-areas:
-        "acceso datos"
+        "datos acceso"
         "actions actions";
     }
   }
