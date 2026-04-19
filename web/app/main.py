@@ -851,7 +851,10 @@ def user_quick_extend(
     days: str = Form("30"),
     user: dict = Depends(current_admin),
 ):
-    """Extensión rápida sin monto (regalo / cortesía)."""
+    """Cortesía: ajusta paid_until sumando o restando días (positivo o negativo).
+    days > 0 → extiende suscripción (regalo).
+    days < 0 → reduce suscripción (penalización / corrección manual).
+    days = 0 → error."""
     target = usr.get_user(user_id)
     if not target:
         raise HTTPException(404)
@@ -861,9 +864,10 @@ def user_quick_extend(
         _flash(request, "Días inválidos.", "error")
         return RedirectResponse("/billing", status_code=303)
     try:
+        notes = "Extensión sin pago" if days_i > 0 else "Reducción manual"
         payment = billing.register_payment(
             user_id, amount=0.0, days=days_i,
-            method="cortesía", notes="Extensión sin pago",
+            method="cortesía", notes=notes,
             registered_by=user,
         )
     except billing.BillingError as e:
@@ -871,23 +875,28 @@ def user_quick_extend(
         return RedirectResponse("/billing", status_code=303)
 
     fresh = usr.get_user(user_id)
+    accion = "extendida" if days_i > 0 else "reducida"
+    abs_days = abs(days_i)
     events.log(
-        "payment_extended", "user",
+        f"payment_{'extended' if days_i > 0 else 'reduced'}", "user",
         actor=user, target_user=target,
         details=f"días={days_i} cubre_hasta={payment['covers_until']}",
+        severity="warn" if days_i < 0 else "info",
         ip=_client_ip(request),
     )
-    notify.send_user(
-        fresh,
-        f"✅ <b>Cuenta extendida</b>\n\n"
-        f"Tu cuenta queda al día hasta el <b>{payment['covers_until']}</b> "
-        f"({days_i} días de cortesía).",
-        event_key="payment_received",
-    )
+    if days_i > 0:
+        notify.send_user(
+            fresh,
+            f"✅ <b>Cuenta extendida</b>\n\n"
+            f"Tu cuenta queda al día hasta el <b>{payment['covers_until']}</b> "
+            f"({days_i} días de cortesía).",
+            event_key="payment_received",
+        )
+    # Sin notificación al cliente cuando reducimos — admin puede comunicarlo manualmente.
     _flash(
         request,
-        f"Cuenta de '{target['username']}' extendida {days_i} días "
-        f"(hasta {payment['covers_until']}).",
+        f"Cuenta de '{target['username']}' {accion} {abs_days} días "
+        f"(ahora cubre hasta {payment['covers_until']}).",
         "success",
     )
     return RedirectResponse("/billing", status_code=303)

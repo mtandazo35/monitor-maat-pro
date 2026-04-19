@@ -83,8 +83,15 @@ def register_payment(
     notes: Optional[str] = None,
     registered_by: Optional[dict] = None,
 ) -> dict:
-    """Registra un pago, extiende paid_until = max(actual, hoy) + días.
-    Devuelve el row del pago insertado."""
+    """Registra un pago/ajuste de cortesía.
+
+    - Pagos reales (amount > 0): days debe ser > 0, paid_until = max(actual, hoy) + days
+    - Cortesía positiva (amount = 0, days > 0): igual, extiende
+    - Reducción/penalización (amount = 0, days < 0): paid_until + days (resta).
+      Si la resta cae antes de hoy, se ajusta a hoy (no permitimos paid_until pasado por error).
+
+    Pagos con monto positivo NUNCA pueden reducir días (sería contradictorio).
+    """
     with connect() as con:
         user_row = con.execute(
             "SELECT id, role, paid_until FROM users WHERE id = ?", (user_id,)
@@ -93,10 +100,12 @@ def register_payment(
         raise BillingError("Usuario no encontrado.")
     if user_row["role"] == "admin":
         raise BillingError("Los administradores no requieren pagos.")
-    if days <= 0:
-        raise BillingError("Los días deben ser mayores a 0.")
+    if days == 0:
+        raise BillingError("Los días no pueden ser 0.")
     if amount < 0:
         raise BillingError("El monto no puede ser negativo.")
+    if amount > 0 and days < 0:
+        raise BillingError("Un pago con monto no puede reducir días. Usá cortesía con monto 0.")
 
     today = today_local()
     current = None
@@ -105,8 +114,18 @@ def register_payment(
             current = date.fromisoformat(user_row["paid_until"])
         except ValueError:
             current = None
-    base = current if current and current > today else today
-    new_until = base + timedelta(days=days)
+
+    if days > 0:
+        # Sumar: arranca desde la mayor entre hoy y paid_until actual
+        base = current if current and current > today else today
+        new_until = base + timedelta(days=days)
+    else:
+        # Restar: arranca desde paid_until actual (si no hay, desde hoy)
+        base = current if current else today
+        new_until = base + timedelta(days=days)
+        # No permitimos retroceder más allá de hoy (deja al cliente vencido pero no en absurdo)
+        if new_until < today:
+            new_until = today
 
     with connect() as con:
         cur = con.execute(
