@@ -109,7 +109,6 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
             CREATE INDEX IF NOT EXISTS idx_payments_paid_at ON payments(paid_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_payments_provider_tx ON payments(provider_tx_id);
 
             CREATE TABLE IF NOT EXISTS plans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
