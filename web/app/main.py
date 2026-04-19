@@ -21,6 +21,7 @@ import notify_service as notify
 import event_service as events
 import system_stats
 import favicon_gen
+import security
 
 
 def _client_ip(request: Request) -> str:
@@ -58,7 +59,17 @@ def _payment_reminder_loop() -> None:
 
 
 app = FastAPI(title="KumaVPN Admin")
-app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET, https_only=False)
+# Headers de seguridad globales (X-Frame-Options, CSP, HSTS condicional, etc.)
+app.add_middleware(security.SecurityHeadersMiddleware)
+# Cookie session: SameSite=strict mitiga CSRF en forms POST.
+# Secure flag se activa cuando SECURE_COOKIES=1 en env (HTTPS atrás).
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.SESSION_SECRET,
+    https_only=security.secure_cookies_enabled(),
+    same_site="strict",
+    max_age=60 * 60 * 24 * 7,  # 7 días
+)
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=str(config.TEMPLATES_DIR.parent / "static")), name="static")
@@ -175,14 +186,31 @@ def login_form(request: Request):
 @app.post("/login")
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
     ip = _client_ip(request)
-    user = auth.authenticate(username.strip(), password)
+    uname = username.strip().lower()
+
+    # Rate limit / lockout antes de procesar (evita brute force con bcrypt costoso)
+    locked, msg = security.is_locked(ip, uname)
+    if locked:
+        events.log(
+            "login_locked", "auth",
+            actor_username=uname, severity="warn",
+            details=msg, ip=ip,
+        )
+        _flash(request, msg, "error")
+        return RedirectResponse("/login", status_code=303)
+
+    user = auth.authenticate(uname, password)
+    security.record_attempt(ip, uname, success=bool(user))
+
     if user:
+        security.reset_user_attempts(uname)
         request.session["user_id"] = user["id"]
         events.log("login_success", "auth", actor=user, ip=ip)
         return RedirectResponse("/", status_code=303)
+
     events.log(
         "login_fail", "auth",
-        actor_username=username.strip(),
+        actor_username=uname,
         severity="warn",
         details="contraseña inválida o usuario inexistente",
         ip=ip,
@@ -1328,8 +1356,18 @@ def me_pay_start(
 @app.get("/api/payments/callback")
 def payphone_callback(request: Request, id: str = "", clientTransactionId: str = ""):
     """Webhook de PayPhone. Se llama después del pago, redirige al usuario al resultado."""
+    ip = _client_ip(request)
+    if security.webhook_rate_limit(ip):
+        events.log("webhook_rate_limited", "system", severity="warn",
+                   details=f"ip={ip}", ip=ip)
+        raise HTTPException(429, "Too Many Requests")
     if not id or not clientTransactionId:
         return RedirectResponse("/payment-failed?error=missing_params", status_code=303)
+    # Validación básica del formato esperado del tx_id (anti-fuzzing)
+    if not clientTransactionId.startswith("MM-") or len(clientTransactionId) > 80:
+        events.log("webhook_invalid_tx", "system", severity="warn",
+                   details=f"tx={clientTransactionId[:80]} ip={ip}", ip=ip)
+        return RedirectResponse("/payment-failed?error=invalid_tx", status_code=303)
     try:
         confirmation = payphone.confirm_transaction(id, clientTransactionId)
     except Exception as e:

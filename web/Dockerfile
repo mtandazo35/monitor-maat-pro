@@ -24,4 +24,8 @@ COPY compose-template.j2 /app/compose-template.j2
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: confía en X-Forwarded-Proto / X-Forwarded-For (necesario detrás
+# de Cloudflare o cualquier reverse proxy). --forwarded-allow-ips=* porque dentro
+# del container no sabemos la IP del proxy de antemano.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips=*"]
