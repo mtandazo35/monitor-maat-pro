@@ -98,8 +98,7 @@
       <input id="cortesia-days" name="days" type="number" value="30" required
              oninput="window.MM.updateCortesiaBtn()">
     </label>
-    <button id="cortesia-btn" type="submit" class="btn"
-            onclick="return window.MM.confirmCortesia()">
+    <button id="cortesia-btn" type="submit" class="btn">
       + Extender 30 días
     </button>
   </form>
@@ -124,15 +123,6 @@
       btn.textContent = '− Reducir ' + Math.abs(n) + ' días';
       btn.classList.add('warn');
     }
-  };
-  MM.confirmCortesia = function() {
-    var inp = document.getElementById('cortesia-days');
-    var n = parseInt(inp.value, 10);
-    if (isNaN(n) || n === 0) return false;
-    var msg = n > 0
-      ? '¿Extender la cuenta de {{ target_username }} en ' + n + ' días (sin cobro)?'
-      : '¿Reducir la cuenta de {{ target_username }} en ' + Math.abs(n) + ' días?';
-    return confirm(msg);
   };
   // Inicializar boton al cargar
   document.addEventListener('DOMContentLoaded', MM.updateCortesiaBtn);
