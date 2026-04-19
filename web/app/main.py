@@ -14,6 +14,7 @@ import db
 import tenant_service as svc
 import user_service as usr
 import billing_service as billing
+import payphone_service as payphone
 import email_service as mail
 import settings_service as settings
 import notify_service as notify
@@ -118,23 +119,31 @@ async def _must_change_handler(request: Request, exc: MustChangePassword):
 
 @app.exception_handler(PaymentRequired)
 async def _payment_required_handler(request: Request, exc: PaymentRequired):
-    request.session.clear()
-    _flash(request, "Tu cuenta está impaga. Contactá al administrador para renovar.", "error")
-    return RedirectResponse("/login", status_code=303)
+    # No cierra sesión: el cliente sigue logueado para poder ir a pagar.
+    return RedirectResponse("/me/billing", status_code=303)
 
 
 def current_user(request: Request) -> dict:
     user = auth.session_user(request)
     if not user:
         raise AuthRequired()
-    # Bloqueo por impago: corta la sesión y redirige a login con mensaje.
-    if not billing.is_paid(user):
-        raise PaymentRequired()
     # Si tiene flag, redirigir a /change-password (excepto si ya está en esa ruta o haciendo logout)
     path = request.url.path
     if user.get("must_change_password") and path not in ("/change-password", "/logout"):
         raise MustChangePassword()
     return user
+
+
+def require_paid(request: Request, user: dict) -> None:
+    """Bloquea operaciones que requieren cuenta al día (admin siempre puede)."""
+    if billing.is_paid(user):
+        return
+    _flash(
+        request,
+        "Tu cuenta no está al día. Renová tu suscripción para crear tenants.",
+        "error",
+    )
+    raise PaymentRequired()
 
 
 def current_admin(request: Request) -> dict:
@@ -168,19 +177,6 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     ip = _client_ip(request)
     user = auth.authenticate(username.strip(), password)
     if user:
-        if not billing.is_paid(user):
-            events.log(
-                "login_blocked_unpaid", "auth",
-                actor=user, severity="warn",
-                details=f"paid_until={user.get('paid_until')}",
-                ip=ip,
-            )
-            _flash(
-                request,
-                "Tu cuenta está impaga. Contactá al administrador para renovar el servicio.",
-                "error",
-            )
-            return RedirectResponse("/login", status_code=303)
         request.session["user_id"] = user["id"]
         events.log("login_success", "auth", actor=user, ip=ip)
         return RedirectResponse("/", status_code=303)
@@ -208,14 +204,9 @@ def logout(request: Request):
 
 @app.get("/change-password", response_class=HTMLResponse)
 def change_password_form(request: Request, user: dict = Depends(current_user)):
-    plan = billing.plan_summary(user) if user["role"] != "admin" else None
     return templates.TemplateResponse(
         "change_password.html",
-        {
-            "request": request, "user": user,
-            "plan": plan,
-            "flash": _pop_flash(request),
-        },
+        {"request": request, "user": user, "flash": _pop_flash(request)},
     )
 
 
@@ -354,6 +345,7 @@ def api_tenants(q: str = "", user: dict = Depends(current_user)):
 
 @app.get("/tenants/new", response_class=HTMLResponse)
 def new_tenant_form(request: Request, user: dict = Depends(current_user)):
+    require_paid(request, user)
     return templates.TemplateResponse(
         "new_tenant.html",
         {"request": request, "user": user, "flash": _pop_flash(request)},
@@ -366,6 +358,7 @@ def new_tenant_submit(
     name: str = Form(...),
     user: dict = Depends(current_user),
 ):
+    require_paid(request, user)
     name = name.strip().lower()
     try:
         svc.create_tenant(name, owner=user)
@@ -1130,6 +1123,287 @@ def telegram_settings_test(
         events.log("telegram_test_fail", "settings", actor=user, severity="error", details=f"chat={chat}: {e}", ip=_client_ip(request))
         _flash(request, f"Error enviando test: {e}", "error")
     return RedirectResponse("/settings/telegram", status_code=303)
+
+
+# -------- PAYPHONE SETTINGS (admin) --------
+
+@app.get("/settings/payphone", response_class=HTMLResponse)
+def payphone_settings_form(request: Request, user: dict = Depends(current_admin)):
+    cfg = settings.get_payphone_config()
+    cfg["token_set"] = bool(cfg["token"])
+    cfg["token"] = ""  # nunca enviar al HTML
+    return templates.TemplateResponse(
+        "payphone_settings.html",
+        {"request": request, "user": user, "cfg": cfg, "flash": _pop_flash(request)},
+    )
+
+
+@app.post("/settings/payphone")
+def payphone_settings_save(
+    request: Request,
+    payphone_token: str = Form(""),
+    payphone_store_id: str = Form(...),
+    payphone_api_url: str = Form(""),
+    public_url: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    settings.save_payphone_config(
+        token=payphone_token or None,
+        store_id=payphone_store_id,
+        api_url=payphone_api_url,
+        public_url=public_url,
+    )
+    events.log("payphone_settings_saved", "settings", actor=user, ip=_client_ip(request))
+    _flash(request, "Configuración PayPhone guardada.", "success")
+    return RedirectResponse("/settings/payphone", status_code=303)
+
+
+# -------- PLANES (admin) --------
+
+@app.get("/settings/plans", response_class=HTMLResponse)
+def plans_settings(request: Request, user: dict = Depends(current_admin)):
+    return templates.TemplateResponse(
+        "plans_settings.html",
+        {
+            "request": request, "user": user,
+            "plans": billing.list_plans(active_only=False),
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.post("/settings/plans/new")
+def plans_create(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(""),
+    price: str = Form(...),
+    currency: str = Form("USD"),
+    days: str = Form(...),
+    is_active: str = Form(""),
+    sort_order: str = Form("0"),
+    user: dict = Depends(current_admin),
+):
+    try:
+        plan = billing.create_plan(
+            name=name, description=description,
+            price=float(price.replace(",", ".")), days=int(days),
+            currency=currency, is_active=bool(is_active),
+            sort_order=int(sort_order) if sort_order.strip() else 0,
+        )
+        events.log("plan_created", "settings", actor=user,
+                   details=f"plan={plan['name']} ${plan['price']}", ip=_client_ip(request))
+        _flash(request, f"Plan '{plan['name']}' creado.", "success")
+    except (billing.BillingError, ValueError) as e:
+        _flash(request, str(e), "error")
+    return RedirectResponse("/settings/plans", status_code=303)
+
+
+@app.post("/settings/plans/{plan_id}/edit")
+def plans_update(
+    request: Request,
+    plan_id: int,
+    name: str = Form(...),
+    description: str = Form(""),
+    price: str = Form(...),
+    currency: str = Form("USD"),
+    days: str = Form(...),
+    is_active: str = Form(""),
+    sort_order: str = Form("0"),
+    user: dict = Depends(current_admin),
+):
+    try:
+        billing.update_plan(
+            plan_id,
+            name=name, description=description,
+            price=float(price.replace(",", ".")), days=int(days),
+            currency=currency, is_active=bool(is_active),
+            sort_order=int(sort_order) if sort_order.strip() else 0,
+        )
+        events.log("plan_updated", "settings", actor=user,
+                   details=f"plan_id={plan_id}", ip=_client_ip(request))
+        _flash(request, "Plan actualizado.", "success")
+    except (billing.BillingError, ValueError) as e:
+        _flash(request, str(e), "error")
+    return RedirectResponse("/settings/plans", status_code=303)
+
+
+@app.post("/settings/plans/{plan_id}/delete")
+def plans_delete(
+    request: Request,
+    plan_id: int,
+    user: dict = Depends(current_admin),
+):
+    try:
+        billing.delete_plan(plan_id)
+        events.log("plan_deleted", "settings", actor=user,
+                   details=f"plan_id={plan_id}", severity="warn",
+                   ip=_client_ip(request))
+        _flash(request, "Plan eliminado (o desactivado si tenía pagos).", "success")
+    except billing.BillingError as e:
+        _flash(request, str(e), "error")
+    return RedirectResponse("/settings/plans", status_code=303)
+
+
+# -------- MI SUSCRIPCIÓN / PAGO (cliente) --------
+
+@app.get("/me/billing", response_class=HTMLResponse)
+def me_billing(request: Request, user: dict = Depends(current_user)):
+    if user["role"] == "admin":
+        _flash(request, "Los administradores no requieren suscripción.", "info")
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(
+        "me_billing.html",
+        {
+            "request": request, "user": user,
+            "plan_summary": billing.plan_summary(user),
+            "plans": billing.list_plans(active_only=True),
+            "payments": billing.list_payments(user["id"]),
+            "payphone_ready": payphone.is_configured(),
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.post("/me/pay")
+def me_pay_start(
+    request: Request,
+    plan_id: int = Form(...),
+    user: dict = Depends(current_user),
+):
+    if user["role"] == "admin":
+        _flash(request, "Los administradores no realizan pagos.", "info")
+        return RedirectResponse("/", status_code=303)
+    if not payphone.is_configured():
+        _flash(request, "El método de pago no está disponible. Contactá al administrador.", "error")
+        return RedirectResponse("/me/billing", status_code=303)
+    plan = billing.get_plan(plan_id)
+    if not plan or not plan["is_active"]:
+        _flash(request, "Plan inválido o no disponible.", "error")
+        return RedirectResponse("/me/billing", status_code=303)
+
+    cfg = settings.get_payphone_config()
+    base_url = (cfg.get("public_url") or "").rstrip("/")
+    if not base_url:
+        _flash(request, "El administrador debe configurar la URL pública en Settings → PayPhone.", "error")
+        return RedirectResponse("/me/billing", status_code=303)
+
+    client_tx_id = payphone.generate_client_tx_id(prefix=f"MM-{user['id']}")
+    response_url = f"{base_url}/api/payments/callback"
+    cancellation_url = f"{base_url}/payment-cancelled?tx={client_tx_id}"
+    customer_email = (user.get("email") or "").strip() or f"user-{user['id']}@monitormaat.local"
+
+    try:
+        result = payphone.create_payment(
+            amount_usd=float(plan["price"]),
+            client_tx_id=client_tx_id,
+            customer_email=customer_email,
+            response_url=response_url,
+            cancellation_url=cancellation_url,
+            reference=f"MonitorMaat — {plan['name']}",
+            metadata={"plan_id": plan["id"], "user_id": user["id"], "username": user["username"]},
+        )
+    except payphone.NotConfigured as e:
+        _flash(request, str(e), "error")
+        return RedirectResponse("/me/billing", status_code=303)
+    except payphone.PayphoneError as e:
+        events.log("payphone_create_fail", "user", actor=user, severity="error",
+                   details=str(e)[:300], ip=_client_ip(request))
+        _flash(request, f"No pudimos iniciar el pago: {e}", "error")
+        return RedirectResponse("/me/billing", status_code=303)
+
+    billing.create_pending_payphone_payment(
+        user_id=user["id"], plan=plan,
+        provider_tx_id=client_tx_id,
+        provider_id=result["payment_id"],
+        raw_response=result["raw"],
+    )
+    events.log("payphone_payment_started", "user", actor=user,
+               details=f"plan={plan['name']} tx={client_tx_id}", ip=_client_ip(request))
+    return RedirectResponse(result["payment_url"], status_code=303)
+
+
+# -------- WEBHOOK + PANTALLAS RESULTADO (públicos, sin auth) --------
+
+@app.get("/api/payments/callback")
+def payphone_callback(request: Request, id: str = "", clientTransactionId: str = ""):
+    """Webhook de PayPhone. Se llama después del pago, redirige al usuario al resultado."""
+    if not id or not clientTransactionId:
+        return RedirectResponse("/payment-failed?error=missing_params", status_code=303)
+    try:
+        confirmation = payphone.confirm_transaction(id, clientTransactionId)
+    except Exception as e:
+        events.log("payphone_callback_fail", "user", severity="error",
+                   details=f"tx={clientTransactionId}: {e}", ip=_client_ip(request))
+        return RedirectResponse(
+            f"/payment-failed?tx={clientTransactionId}&error=confirm_failed",
+            status_code=303,
+        )
+
+    payment = billing.apply_payphone_confirmation(clientTransactionId, confirmation)
+    status = (confirmation.get("transactionStatus") or "UNKNOWN").lower()
+
+    if payment and payment["provider_status"] == "Approved":
+        # Notificaciones
+        u = usr.get_user(payment["user_id"])
+        events.log("payphone_payment_approved", "user", actor=u,
+                   details=f"tx={clientTransactionId} ${payment['amount']} cubre_hasta={payment['covers_until']}",
+                   ip=_client_ip(request))
+        try:
+            notify.send_admin(
+                f"💳 <b>Pago PayPhone aprobado</b>\n"
+                f"Cliente: <code>{u['username']}</code>\n"
+                f"Monto: {payment['amount']} {payment['currency']}\n"
+                f"Cubre hasta: <b>{payment['covers_until']}</b>"
+            )
+        except Exception:
+            pass
+        try:
+            notify.send_user(
+                u,
+                f"✅ <b>Pago aprobado</b>\n\nTu suscripción quedó al día hasta el "
+                f"<b>{payment['covers_until']}</b>.\n"
+                f"Monto: {payment['amount']} {payment['currency']}.",
+                event_key="payment_received",
+            )
+        except Exception:
+            pass
+        return RedirectResponse(f"/payment-success?tx={clientTransactionId}", status_code=303)
+
+    events.log("payphone_payment_failed", "user", severity="warn",
+               details=f"tx={clientTransactionId} status={status}", ip=_client_ip(request))
+    return RedirectResponse(
+        f"/payment-failed?tx={clientTransactionId}&status={status}",
+        status_code=303,
+    )
+
+
+@app.get("/payment-success", response_class=HTMLResponse)
+def payment_success_page(request: Request, tx: str = ""):
+    payment = billing.get_payment_by_provider_tx(tx) if tx else None
+    return templates.TemplateResponse(
+        "payment_success.html",
+        {"request": request, "user": auth.session_user(request),
+         "payment": payment, "tx": tx, "flash": _pop_flash(request)},
+    )
+
+
+@app.get("/payment-failed", response_class=HTMLResponse)
+def payment_failed_page(request: Request, tx: str = "", status: str = "", error: str = ""):
+    return templates.TemplateResponse(
+        "payment_failed.html",
+        {"request": request, "user": auth.session_user(request),
+         "tx": tx, "status": status, "error": error, "flash": _pop_flash(request)},
+    )
+
+
+@app.get("/payment-cancelled", response_class=HTMLResponse)
+def payment_cancelled_page(request: Request, tx: str = ""):
+    return templates.TemplateResponse(
+        "payment_cancelled.html",
+        {"request": request, "user": auth.session_user(request),
+         "tx": tx, "flash": _pop_flash(request)},
+    )
 
 
 @app.get("/me/telegram", response_class=HTMLResponse)

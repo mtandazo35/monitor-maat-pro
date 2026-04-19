@@ -12,6 +12,7 @@ No conoce nada de la lógica de auth/CRUD de usuarios — usa la tabla `users`
 solo para leer/actualizar `paid_until` y `payment_warning_sent_for`.
 """
 
+import json
 from datetime import date, timedelta
 from typing import Optional
 
@@ -150,6 +151,219 @@ def list_payments(user_id: int, limit: int = 100) -> list[dict]:
             (user_id, limit),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------- PLANES ----------------
+
+def list_plans(active_only: bool = False) -> list[dict]:
+    sql = "SELECT * FROM plans"
+    params: list = []
+    if active_only:
+        sql += " WHERE is_active = 1"
+    sql += " ORDER BY sort_order, price"
+    with connect() as con:
+        rows = con.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_plan(plan_id: int) -> Optional[dict]:
+    with connect() as con:
+        row = con.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def create_plan(
+    name: str,
+    description: str,
+    price: float,
+    days: int,
+    currency: str = "USD",
+    is_active: bool = True,
+    sort_order: int = 0,
+) -> dict:
+    name = (name or "").strip()
+    if not name:
+        raise BillingError("El nombre del plan es requerido.")
+    if price < 0:
+        raise BillingError("El precio no puede ser negativo.")
+    if days <= 0:
+        raise BillingError("Los días deben ser mayores a 0.")
+    with connect() as con:
+        cur = con.execute(
+            """INSERT INTO plans (name, description, price, currency, days,
+                                  is_active, sort_order, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, (description or "").strip() or None, float(price),
+             (currency or "USD").strip().upper(), int(days),
+             1 if is_active else 0, int(sort_order), now_iso()),
+        )
+        pid = cur.lastrowid
+        row = con.execute("SELECT * FROM plans WHERE id = ?", (pid,)).fetchone()
+    return dict(row)
+
+
+def update_plan(plan_id: int, **fields) -> dict:
+    plan = get_plan(plan_id)
+    if not plan:
+        raise BillingError("Plan no encontrado.")
+    allowed = {"name", "description", "price", "currency", "days", "is_active", "sort_order"}
+    sets = []
+    params: list = []
+    for k, v in fields.items():
+        if k not in allowed or v is None:
+            continue
+        if k == "name":
+            v = (v or "").strip()
+            if not v:
+                raise BillingError("El nombre del plan es requerido.")
+        elif k == "price":
+            v = float(v)
+            if v < 0:
+                raise BillingError("El precio no puede ser negativo.")
+        elif k == "days":
+            v = int(v)
+            if v <= 0:
+                raise BillingError("Los días deben ser mayores a 0.")
+        elif k == "currency":
+            v = (v or "USD").strip().upper()
+        elif k == "is_active":
+            v = 1 if v else 0
+        elif k == "sort_order":
+            v = int(v)
+        elif k == "description":
+            v = (v or "").strip() or None
+        sets.append(f"{k} = ?")
+        params.append(v)
+    if not sets:
+        return plan
+    params.append(plan_id)
+    with connect() as con:
+        con.execute(f"UPDATE plans SET {', '.join(sets)} WHERE id = ?", params)
+    return get_plan(plan_id)
+
+
+def delete_plan(plan_id: int) -> None:
+    plan = get_plan(plan_id)
+    if not plan:
+        raise BillingError("Plan no encontrado.")
+    with connect() as con:
+        # Si tiene pagos asociados, mejor desactivar que borrar (preserva historial)
+        n = con.execute("SELECT COUNT(*) AS c FROM payments WHERE plan_id = ?", (plan_id,)).fetchone()["c"]
+        if n > 0:
+            con.execute("UPDATE plans SET is_active = 0 WHERE id = ?", (plan_id,))
+        else:
+            con.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+
+
+# ---------------- PAYPHONE INTEGRATION ----------------
+
+def create_pending_payphone_payment(
+    user_id: int,
+    plan: dict,
+    provider_tx_id: str,
+    provider_id: str,
+    raw_response: Optional[dict] = None,
+) -> dict:
+    """Crea un row PENDING en payments para un pago iniciado con PayPhone.
+    Cuando llegue el callback, se actualiza con apply_payphone_confirmation()."""
+    user_row = None
+    with connect() as con:
+        user_row = con.execute("SELECT id, role FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user_row:
+        raise BillingError("Usuario no encontrado.")
+    if user_row["role"] == "admin":
+        raise BillingError("Los administradores no requieren pagos.")
+    with connect() as con:
+        cur = con.execute(
+            """INSERT INTO payments
+               (user_id, amount, currency, days, method, notes, paid_at,
+                covers_until, provider, provider_id, provider_status,
+                provider_tx_id, raw_response, plan_id)
+               VALUES (?, ?, ?, ?, 'payphone', ?, ?, '', 'payphone', ?, 'PENDING', ?, ?, ?)""",
+            (
+                user_id,
+                float(plan["price"]),
+                (plan.get("currency") or "USD").upper(),
+                int(plan["days"]),
+                f"Plan: {plan['name']}",
+                now_iso(),
+                provider_id,
+                provider_tx_id,
+                json.dumps(raw_response) if raw_response else None,
+                plan["id"],
+            ),
+        )
+        pid = cur.lastrowid
+        row = con.execute("SELECT * FROM payments WHERE id = ?", (pid,)).fetchone()
+    return dict(row)
+
+
+def apply_payphone_confirmation(provider_tx_id: str, confirmation: dict) -> Optional[dict]:
+    """Procesa la confirmación que vino del callback PayPhone.
+
+    Si transactionStatus == 'Approved': actualiza el row + extiende paid_until.
+    Si Denied/Cancelled/Expired: marca el row como tal, no extiende paid_until.
+    Idempotente: si ya fue procesado (status != PENDING), no hace nada.
+    Devuelve el row actualizado, o None si no se encontró.
+    """
+    status = confirmation.get("transactionStatus", "UNKNOWN")
+    raw_json = json.dumps(confirmation)
+
+    with connect() as con:
+        row = con.execute(
+            "SELECT * FROM payments WHERE provider_tx_id = ? AND provider = 'payphone'",
+            (provider_tx_id,),
+        ).fetchone()
+        if not row:
+            return None
+        payment = dict(row)
+
+        # Idempotencia: si ya fue procesado y no está PENDING, no re-aplicar
+        if payment["provider_status"] not in (None, "", "PENDING"):
+            return payment
+
+        if status == "Approved":
+            today = today_local()
+            user_row = con.execute(
+                "SELECT id, paid_until FROM users WHERE id = ?", (payment["user_id"],)
+            ).fetchone()
+            if not user_row:
+                return None
+            current = None
+            if user_row["paid_until"]:
+                try:
+                    current = date.fromisoformat(user_row["paid_until"])
+                except ValueError:
+                    current = None
+            base = current if current and current > today else today
+            new_until = base + timedelta(days=int(payment["days"]))
+            con.execute(
+                """UPDATE payments SET
+                       provider_status = ?, raw_response = ?, covers_until = ?,
+                       paid_at = ?
+                   WHERE id = ?""",
+                (status, raw_json, new_until.isoformat(), now_iso(), payment["id"]),
+            )
+            con.execute(
+                "UPDATE users SET paid_until = ?, payment_warning_sent_for = NULL WHERE id = ?",
+                (new_until.isoformat(), payment["user_id"]),
+            )
+        else:
+            con.execute(
+                "UPDATE payments SET provider_status = ?, raw_response = ? WHERE id = ?",
+                (status, raw_json, payment["id"]),
+            )
+
+        updated = con.execute("SELECT * FROM payments WHERE id = ?", (payment["id"],)).fetchone()
+    return dict(updated) if updated else None
+
+
+def get_payment_by_provider_tx(provider_tx_id: str) -> Optional[dict]:
+    with connect() as con:
+        row = con.execute(
+            "SELECT * FROM payments WHERE provider_tx_id = ?", (provider_tx_id,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def last_payment(user_id: int) -> Optional[dict]:

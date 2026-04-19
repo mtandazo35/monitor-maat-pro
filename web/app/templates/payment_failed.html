@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Pago fallido · MonitorMaat{% endblock %}
+{% block content %}
+<section class="card card-narrow" style="text-align:center;padding:32px">
+  <div style="font-size:4rem;line-height:1">❌</div>
+  <h1>El pago no pudo completarse</h1>
+  {% if status %}
+    <p class="muted">Estado reportado por PayPhone: <strong>{{ status }}</strong></p>
+  {% elif error %}
+    <p class="muted">Error: <code>{{ error }}</code></p>
+  {% endif %}
+  {% if tx %}<p class="muted small">Transacción: <code>{{ tx }}</code></p>{% endif %}
+  <p>No te preocupes — no se realizó ningún cargo. Podés intentarlo de nuevo cuando quieras.</p>
+  <div class="row" style="justify-content:center;margin-top:18px">
+    {% if user %}
+    <a href="/me/billing" class="btn primary">Volver e intentar de nuevo</a>
+    <a href="/" class="btn">Ir al dashboard</a>
+    {% else %}
+    <a href="/login" class="btn primary">Ingresar al panel</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block content_anon %}{{ self.content() }}{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Pago aprobado · MonitorMaat{% endblock %}
+{% block content %}
+<section class="card card-narrow" style="text-align:center;padding:32px">
+  <div style="font-size:4rem;line-height:1">✅</div>
+  <h1>Pago aprobado</h1>
+  {% if payment %}
+  <p>Tu suscripción quedó al día hasta el <strong>{{ payment.covers_until }}</strong>.</p>
+  <p class="muted">
+    Monto: {{ "%.2f"|format(payment.amount) }} {{ payment.currency }} · {{ payment.days }} día{{ '' if payment.days == 1 else 's' }}<br>
+    Transacción: <code>{{ tx }}</code>
+  </p>
+  {% else %}
+  <p class="muted">Tu pago fue procesado correctamente.</p>
+  {% if tx %}<p class="muted small">Transacción: <code>{{ tx }}</code></p>{% endif %}
+  {% endif %}
+  <div class="row" style="justify-content:center;margin-top:18px">
+    {% if user %}
+    <a href="/me/billing" class="btn primary">Ver mi suscripción</a>
+    <a href="/" class="btn">Ir al dashboard</a>
+    {% else %}
+    <a href="/login" class="btn primary">Ingresar al panel</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block content_anon %}{{ self.content() }}{% endblock %}

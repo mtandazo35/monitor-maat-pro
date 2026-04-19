@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Planes · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Planes de suscripción</h1>
+</div>
+
+<section class="card">
+  <h2 class="form-section">Crear nuevo plan</h2>
+  <form method="post" action="/settings/plans/new">
+    <div class="form-grid-2">
+      <label>Nombre
+        <input name="name" required placeholder="Pro" maxlength="40">
+      </label>
+      <label>Orden (menor → primero)
+        <input name="sort_order" type="number" value="0">
+      </label>
+    </div>
+    <label>Descripción
+      <input name="description" placeholder="Plan profesional con soporte prioritario" maxlength="200">
+    </label>
+    <div class="form-grid-2">
+      <label>Precio
+        <input name="price" type="number" min="0" step="0.01" required placeholder="29.99">
+      </label>
+      <label>Moneda
+        <select name="currency">
+          <option>USD</option>
+          <option>EUR</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-grid-2">
+      <label>Días de cobertura
+        <input name="days" type="number" min="1" required value="30">
+      </label>
+      <label class="row" style="align-items:center;gap:8px">
+        <input type="checkbox" name="is_active" value="1" checked>
+        <span>Activo (visible para clientes)</span>
+      </label>
+    </div>
+    <div class="row">
+      <button type="submit" class="primary">Crear plan</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="form-section">Planes existentes</h2>
+  {% if plans %}
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Orden</th><th>Nombre</th><th>Descripción</th>
+          <th>Precio</th><th>Días</th><th>Activo</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in plans %}
+        <tr>
+          <form method="post" action="/settings/plans/{{ p.id }}/edit">
+            <td><input type="number" name="sort_order" value="{{ p.sort_order }}" style="width:5em"></td>
+            <td><input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em"></td>
+            <td><input name="description" value="{{ p.description or '' }}" maxlength="200"></td>
+            <td>
+              <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required style="width:6em">
+              <select name="currency" style="width:5em">
+                {% for c in ['USD','EUR'] %}
+                <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:5em"></td>
+            <td>
+              <label class="row" style="align-items:center;gap:6px;justify-content:center">
+                <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
+              </label>
+            </td>
+            <td class="row" style="gap:6px">
+              <button type="submit" class="btn small primary">Guardar</button>
+          </form>
+              <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline"
+                    onsubmit="return confirm('¿Eliminar plan {{ p.name }}? (se desactiva si tiene pagos)');">
+                <button type="submit" class="btn small warn">Borrar</button>
+              </form>
+            </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No hay planes todavía. Creá el primero arriba.</p>
+  {% endif %}
+</section>
+{% endblock %}

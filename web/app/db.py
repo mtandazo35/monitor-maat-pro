@@ -99,10 +99,30 @@ def init_db() -> None:
                 paid_at TEXT NOT NULL,
                 registered_by_id INTEGER REFERENCES users(id),
                 registered_by_username TEXT,
-                covers_until TEXT NOT NULL
+                covers_until TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'manual',
+                provider_id TEXT,
+                provider_status TEXT,
+                provider_tx_id TEXT,
+                raw_response TEXT,
+                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
             CREATE INDEX IF NOT EXISTS idx_payments_paid_at ON payments(paid_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_payments_provider_tx ON payments(provider_tx_id);
+
+            CREATE TABLE IF NOT EXISTS plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                price REAL NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                days INTEGER NOT NULL DEFAULT 30,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_plans_active ON plans(is_active, sort_order);
             """
         )
 
@@ -140,6 +160,26 @@ def init_db() -> None:
             )
         if "payment_warning_sent_for" not in ucols2:
             con.execute("ALTER TABLE users ADD COLUMN payment_warning_sent_for TEXT")
+
+        # Migración payments: columnas para tracking de provider (PayPhone)
+        pcols = [r[1] for r in con.execute("PRAGMA table_info(payments)").fetchall()]
+        for col, sql in [
+            ("provider",        "ALTER TABLE payments ADD COLUMN provider TEXT NOT NULL DEFAULT 'manual'"),
+            ("provider_id",     "ALTER TABLE payments ADD COLUMN provider_id TEXT"),
+            ("provider_status", "ALTER TABLE payments ADD COLUMN provider_status TEXT"),
+            ("provider_tx_id",  "ALTER TABLE payments ADD COLUMN provider_tx_id TEXT"),
+            ("raw_response",    "ALTER TABLE payments ADD COLUMN raw_response TEXT"),
+            ("plan_id",         "ALTER TABLE payments ADD COLUMN plan_id INTEGER"),
+        ]:
+            if col not in pcols:
+                try:
+                    con.execute(sql)
+                except Exception:
+                    pass
+        try:
+            con.execute("CREATE INDEX IF NOT EXISTS idx_payments_provider_tx ON payments(provider_tx_id)")
+        except Exception:
+            pass
 
 
 @contextmanager

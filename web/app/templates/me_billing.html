@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Mi suscripción · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Mi suscripción</h1>
+</div>
+
+{# === Tarjeta de estado === #}
+{% set d = plan_summary.days_until_due %}
+{% set status_color = 'sc-green' if (plan_summary.is_paid and (d is none or d > 7)) else ('sc-amber' if (plan_summary.is_paid and d <= 7) else 'sc-red') %}
+{% set status_label = 'Al día' if (plan_summary.is_paid and (d is none or d > 7)) else ('Vence pronto' if (plan_summary.is_paid and d <= 7) else 'Impago') %}
+
+<section class="card stat-card {{ status_color }}" style="padding:24px;margin-bottom:18px">
+  <div class="row between" style="align-items:flex-start;gap:16px;flex-wrap:wrap">
+    <div>
+      <div class="muted small">Estado de tu cuenta</div>
+      <h2 style="margin:4px 0 6px">{{ status_label }}</h2>
+      {% if plan_summary.paid_until %}
+        {% if d is not none and d > 0 %}
+          <p class="muted" style="margin:0">
+            Tu suscripción está activa hasta el <strong><span data-utc-date="{{ plan_summary.paid_until }}T00:00:00Z">{{ plan_summary.paid_until }}</span></strong>
+            ({{ d }} día{{ '' if d == 1 else 's' }} restante{{ '' if d == 1 else 's' }}).
+          </p>
+        {% elif d == 0 %}
+          <p class="muted" style="margin:0">Tu suscripción vence <strong>hoy</strong>. Renová para no perder acceso a la creación de tenants.</p>
+        {% else %}
+          <p class="muted" style="margin:0">Tu suscripción venció hace <strong>{{ d|abs }} día{{ '' if d|abs == 1 else 's' }}</strong>. No podés crear nuevos tenants hasta renovar.</p>
+        {% endif %}
+      {% else %}
+        <p class="muted" style="margin:0">Aún no tenés un período activo.</p>
+      {% endif %}
+    </div>
+    {% if plans %}
+    <a href="#planes" class="btn primary" style="font-size:1.05rem;padding:12px 22px">
+      {% if plan_summary.is_paid %}Renovar / Cambiar plan →{% else %}Pagar ahora →{% endif %}
+    </a>
+    {% endif %}
+  </div>
+</section>
+
+{# === Resumen del plan actual === #}
+{% if plan_summary.has_payments %}
+<section class="card">
+  <h2 class="form-section">Tu plan actual</h2>
+  <dl class="grid">
+    <dt>Precio</dt>
+    <dd><strong>{{ "%.2f"|format(plan_summary.last_amount) }} {{ plan_summary.last_currency }}</strong>
+        / {{ plan_summary.last_days }} día{{ '' if plan_summary.last_days == 1 else 's' }}</dd>
+    <dt>Pagado hasta</dt>
+    <dd><span data-utc-date="{{ plan_summary.paid_until }}T00:00:00Z">{{ plan_summary.paid_until }}</span></dd>
+    <dt>Último pago</dt>
+    <dd><span data-utc-date="{{ plan_summary.last_paid_at }}">{{ plan_summary.last_paid_at[:10] }}</span> — cubrió hasta {{ plan_summary.last_covers_until }}</dd>
+    {% if plan_summary.total_by_currency %}
+    <dt>Total acumulado</dt>
+    <dd>
+      {% for cur, total in plan_summary.total_by_currency.items() %}
+        <strong>{{ "%.2f"|format(total) }} {{ cur }}</strong>{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </dd>
+    {% endif %}
+  </dl>
+</section>
+{% endif %}
+
+{# === Selector de planes para pagar === #}
+<section id="planes" class="card">
+  <h2 class="form-section">{% if plan_summary.has_payments %}Renovar suscripción{% else %}Elegí tu plan{% endif %}</h2>
+
+  {% if not payphone_ready %}
+  <p class="flash flash-error" style="margin:0 0 14px">
+    El método de pago no está disponible en este momento. Contactá al administrador.
+  </p>
+  {% endif %}
+
+  {% if not plans %}
+  <p class="muted">No hay planes disponibles todavía. Contactá al administrador.</p>
+  {% else %}
+  <div class="plans-grid">
+    {% for plan in plans %}
+    <article class="plan-card">
+      <div class="plan-head">
+        <h3>{{ plan.name }}</h3>
+        {% if plan.description %}<p class="muted small">{{ plan.description }}</p>{% endif %}
+      </div>
+      <div class="plan-price">
+        <span class="plan-amount">{{ "%.2f"|format(plan.price) }}</span>
+        <span class="plan-currency">{{ plan.currency }}</span>
+      </div>
+      <p class="muted small">por {{ plan.days }} día{{ '' if plan.days == 1 else 's' }}</p>
+      <form method="post" action="/me/pay">
+        <input type="hidden" name="plan_id" value="{{ plan.id }}">
+        <button type="submit" class="btn primary" style="width:100%" {% if not payphone_ready %}disabled{% endif %}>
+          Pagar con PayPhone
+        </button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+  <p class="muted small" style="margin-top:12px">
+    💳 El pago se procesa de forma segura por PayPhone. Tu suscripción queda activa apenas se confirma el pago.
+  </p>
+  {% endif %}
+</section>
+
+{# === Historial de pagos === #}
+<section class="card">
+  <h2 class="form-section">Historial de pagos</h2>
+  {% if not payments %}
+  <p class="muted">Sin pagos registrados todavía.</p>
+  {% else %}
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Fecha</th><th>Monto</th><th>Días</th><th>Cubrió hasta</th><th>Método</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        {% for p in payments %}
+        <tr>
+          <td class="muted small"><span data-utc-date="{{ p.paid_at }}">{{ p.paid_at[:10] }}</span></td>
+          <td><strong>{{ "%.2f"|format(p.amount) }} {{ p.currency }}</strong>{% if p.amount == 0 %} <span class="muted small">(cortesía)</span>{% endif %}</td>
+          <td>{{ p.days }}</td>
+          <td>{{ p.covers_until or '—' }}</td>
+          <td>{{ p.method or '—' }}</td>
+          <td>
+            {% if p.provider == 'payphone' %}
+              {% set s = p.provider_status %}
+              {% if s == 'Approved' %}<span class="role-pill role-admin">Aprobado</span>
+              {% elif s == 'PENDING' %}<span class="role-pill role-user">Pendiente</span>
+              {% else %}<span class="role-pill role-system">{{ s or '—' }}</span>{% endif %}
+            {% else %}
+              <span class="role-pill role-admin">Manual</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const dateFmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  document.querySelectorAll('[data-utc-date]').forEach(el => {
+    const ts = el.dataset.utcDate;
+    if (!ts) return;
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return;
+    el.textContent = dateFmt.format(d);
+  });
+});
+</script>
+
+<style>
+  .plans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .plan-card {
+    background: var(--bg-elevated, rgba(255,255,255,0.03));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .plan-card:hover { border-color: var(--accent, #a855f7); }
+  .plan-head h3 { margin: 0; }
+  .plan-price { display: flex; align-items: baseline; gap: 6px; }
+  .plan-amount { font-size: 2.2rem; font-weight: 700; }
+  .plan-currency { font-size: 1rem; color: var(--text-muted, #888); }
+</style>
+{% endblock %}

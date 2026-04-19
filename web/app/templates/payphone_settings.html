@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}PayPhone · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Configuración PayPhone</h1>
+</div>
+
+<section id="pp-app" class="card"
+         data-token-set="{{ '1' if cfg.token_set else '0' }}"
+         data-store-id="{{ cfg.store_id or '' }}"
+         data-api-url="{{ cfg.api_url or 'https://pay.payphonetodoesposible.com' }}"
+         data-public-url="{{ cfg.public_url or '' }}"
+         v-cloak>
+  <h2>Credenciales del comercio</h2>
+  <p class="muted">
+    Token y Store ID del panel de PayPhone (Comercio → API). El cliente cobra
+    con IVA 15% Ecuador automáticamente.
+  </p>
+
+  <details class="mk-details" style="margin-bottom: 14px">
+    <summary>¿Cómo obtengo el token y el storeId?</summary>
+    <div style="padding: 10px 0; font-size: .9rem">
+      <ol style="padding-left: 20px; line-height: 1.7">
+        <li>Entrá al panel de PayPhone Comercio.</li>
+        <li>Sección <strong>API</strong> → <strong>Tokens</strong>: generá un token y copialo (no se vuelve a mostrar).</li>
+        <li>Sección <strong>Tiendas</strong>: copiá el <code>storeId</code> de la tienda donde van a quedar registrados los pagos.</li>
+        <li>Cargalos abajo y guardá.</li>
+      </ol>
+    </div>
+  </details>
+
+  <form method="post" action="/settings/payphone">
+    <label>Token de la API
+      <span class="pwd-wrap">
+        <input id="pp-token" name="payphone_token" :type="showToken ? 'text' : 'password'"
+               autocomplete="off"
+               :placeholder="tokenSet ? '••••••••• (cargado — dejá vacío para mantener)' : 'eyJhbGciOi...'">
+        <button type="button" class="pwd-toggle" :class="{ showing: showToken }" @click="showToken = !showToken" tabindex="-1">
+          <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+        </button>
+      </span>
+    </label>
+
+    <label>Store ID
+      <input name="payphone_store_id" v-model="storeId" required placeholder="abcd1234-...">
+    </label>
+
+    <label>API URL
+      <input name="payphone_api_url" v-model="apiUrl">
+      <small class="muted">Default: <code>https://pay.payphonetodoesposible.com</code></small>
+    </label>
+
+    <label>URL pública del panel (para el webhook de PayPhone)
+      <input name="public_url" v-model="publicUrl" placeholder="https://kumavpn.tudominio.com">
+      <small class="muted" style="color: #f59e0b">
+        ⚠ PayPhone exige HTTPS. Configurá un dominio con SSL o usá ngrok.
+        El callback será <code v-text="callbackPreview"></code>
+      </small>
+    </label>
+
+    <div class="row">
+      <button type="submit" class="primary">Guardar</button>
+      <a href="/" class="btn">Cancelar</a>
+    </div>
+  </form>
+</section>
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('pp-app');
+  const init = root.dataset;
+  const { createApp, ref, computed } = Vue;
+  createApp({
+    setup() {
+      const tokenSet = init.tokenSet === '1';
+      const storeId = ref(init.storeId);
+      const apiUrl = ref(init.apiUrl);
+      const publicUrl = ref(init.publicUrl);
+      const showToken = ref(false);
+      const callbackPreview = computed(() => {
+        const base = (publicUrl.value || '').trim().replace(/\/$/, '');
+        return base ? base + '/api/payments/callback' : '— configurá la URL pública primero —';
+      });
+      return { tokenSet, storeId, apiUrl, publicUrl, showToken, callbackPreview };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#pp-app');
+});
+</script>
+
+<style>[v-cloak] { visibility: hidden; }</style>
+{% endblock %}

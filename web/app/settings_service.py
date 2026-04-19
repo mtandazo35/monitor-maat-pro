@@ -70,3 +70,28 @@ def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
     if bot_token:
         set_value("telegram_bot_token", bot_token.strip())
     set_value("telegram_admin_chat_id", admin_chat_id.strip())
+
+
+def get_payphone_config() -> dict:
+    return {
+        "token": get("payphone_token", ""),
+        "store_id": get("payphone_store_id", ""),
+        "api_url": get("payphone_api_url", "https://pay.payphonetodoesposible.com"),
+        "public_url": get("public_url", ""),
+    }
+
+
+def save_payphone_config(
+    token: Optional[str],
+    store_id: str,
+    api_url: str = "",
+    public_url: str = "",
+) -> None:
+    """Guarda config PayPhone. Si token es None/vacío, mantiene el anterior."""
+    if token:
+        set_value("payphone_token", token.strip())
+    set_value("payphone_store_id", store_id.strip())
+    if api_url.strip():
+        set_value("payphone_api_url", api_url.strip())
+    if public_url.strip():
+        set_value("public_url", public_url.strip())
