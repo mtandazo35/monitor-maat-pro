@@ -6,6 +6,21 @@
 </div>
 
 <section class="card">
+  <h2 class="form-section">⏰ Hora de suspensión</h2>
+  <p class="muted small" style="margin:0 0 12px">
+    A esta hora del día (zona Ecuador, UTC-5) se suspenden las cuentas que vencen ese día.
+    Antes de esta hora el cliente sigue activo aunque el día sea el de vencimiento.
+  </p>
+  <form method="post" action="/settings/billing" class="row" style="align-items:flex-end;gap:10px">
+    <label style="margin:0;min-width:180px">
+      Hora (formato HH:MM)
+      <input name="suspension_time" type="time" value="{{ billing_cfg.suspension_time }}" required>
+    </label>
+    <button type="submit" class="primary">Guardar</button>
+  </form>
+</section>
+
+<section class="card">
   <h2 class="form-section">Crear nuevo plan</h2>
   <form method="post" action="/settings/plans/new">
     <div class="form-grid-2">

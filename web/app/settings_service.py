@@ -72,6 +72,28 @@ def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
     set_value("telegram_admin_chat_id", admin_chat_id.strip())
 
 
+def get_billing_config() -> dict:
+    """Configuración global de facturación. Por ahora solo la hora de suspensión:
+    si paid_until = hoy, el cliente sigue activo hasta esa hora (Ecuador)."""
+    return {
+        "suspension_time": get("suspension_time", "23:59"),
+    }
+
+
+def save_billing_config(suspension_time: str) -> None:
+    s = (suspension_time or "").strip()
+    # Validar formato HH:MM
+    if not s or len(s) != 5 or s[2] != ":":
+        raise ValueError("Formato hora inválido (use HH:MM)")
+    try:
+        hh, mm = int(s[:2]), int(s[3:])
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            raise ValueError
+    except ValueError:
+        raise ValueError("Hora fuera de rango (00:00 a 23:59)")
+    set_value("suspension_time", s)
+
+
 def get_payphone_config() -> dict:
     return {
         "token": get("payphone_token", ""),

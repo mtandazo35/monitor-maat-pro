@@ -13,10 +13,24 @@ solo para leer/actualizar `paid_until` y `payment_warning_sent_for`.
 """
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 
-from db import connect, now_iso, today_local
+from db import connect, now_iso, now_local, today_local
+
+DEFAULT_SUSPENSION_TIME = "23:59"
+
+
+def _suspension_time() -> time:
+    """Devuelve la hora de suspensión configurada (o 23:59 default)."""
+    try:
+        # Import circular evitado: settings_service no importa billing
+        import settings_service
+        s = settings_service.get_billing_config().get("suspension_time", DEFAULT_SUSPENSION_TIME)
+        hh, mm = int(s[:2]), int(s[3:])
+        return time(hh, mm)
+    except Exception:
+        return time(23, 59)
 
 DEFAULT_TRIAL_DAYS = 30
 DEFAULT_PAYMENT_DAYS = 30
@@ -30,7 +44,13 @@ class BillingError(Exception):
 # ---------------- ESTADO ----------------
 
 def is_paid(user: dict) -> bool:
-    """True si el usuario puede operar (admin siempre, user si paid_until >= hoy)."""
+    """True si el usuario puede operar.
+    - Admin: siempre True
+    - User: paid_until > hoy → True
+            paid_until == hoy Y hora actual < hora_suspensión → True (sigue activo hoy)
+            paid_until == hoy Y hora actual >= hora_suspensión → False (suspendido)
+            paid_until < hoy → False
+    """
     if not user:
         return False
     if user.get("role") == "admin":
@@ -39,9 +59,16 @@ def is_paid(user: dict) -> bool:
     if not pu:
         return False
     try:
-        return date.fromisoformat(pu) >= today_local()
+        pu_date = date.fromisoformat(pu)
     except ValueError:
         return False
+    today = today_local()
+    if pu_date > today:
+        return True
+    if pu_date < today:
+        return False
+    # pu_date == today: comparar hora actual con hora de suspensión
+    return now_local().time() < _suspension_time()
 
 
 def days_until_due(user: dict) -> Optional[int]:
@@ -443,10 +470,12 @@ def plan_summary(user: dict) -> dict:
       - total_by_currency: {currency: total}
       - has_payments: bool (False si solo tiene el trial inicial)
     """
+    susp = _suspension_time()
     summary = {
         "paid_until": user.get("paid_until"),
         "days_until_due": days_until_due(user),
         "is_paid": is_paid(user),
+        "suspension_time": f"{susp.hour:02d}:{susp.minute:02d}",
         "has_payments": False,
         "last_amount": None,
         "last_currency": None,

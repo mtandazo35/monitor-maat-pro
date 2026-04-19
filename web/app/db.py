@@ -208,5 +208,10 @@ def today_local() -> date:
     return (datetime.utcnow() + _EC_OFFSET).date()
 
 
+def now_local() -> datetime:
+    """Datetime local de Ecuador (UTC-5, sin DST). Naive datetime."""
+    return datetime.utcnow() + _EC_OFFSET
+
+
 def today_iso() -> str:
     return today_local().isoformat()

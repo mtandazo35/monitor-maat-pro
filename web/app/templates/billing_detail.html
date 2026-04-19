@@ -27,7 +27,12 @@
         <span class="role-pill" :class="statusClass" v-text="statusLabel"></span>
       </dd>
       <dt>Pagado hasta</dt>
-      <dd v-text="userInfo.paid_until || '—'"></dd>
+      <dd>
+        <span v-text="userInfo.paid_until || '—'"></span>
+        <span v-if="userInfo.paid_until && plan && plan.suspension_time" class="muted small">
+          a las [[ plan.suspension_time ]] (Ecuador)
+        </span>
+      </dd>
       <dt>Días restantes</dt>
       <dd v-text="daysText"></dd>
       <dt v-if="plan && plan.has_payments">Plan actual</dt>
@@ -244,7 +249,12 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!userInfo.value) return '—';
         const d = userInfo.value.days_until_due;
         if (d === null || d === undefined) return '—';
-        return d > 0 ? `${d} días` : (d === 0 ? 'vence hoy' : `vencido hace ${Math.abs(d)} d`);
+        if (d > 0) return `${d} días`;
+        if (d === 0) {
+          const susp = plan.value?.suspension_time || '23:59';
+          return `vence hoy a las ${susp}`;
+        }
+        return `vencido hace ${Math.abs(d)} d`;
       });
 
       function isLast(i) { return i === Object.keys(plan.value?.total_by_currency || {}).length - 1; }

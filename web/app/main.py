@@ -1255,9 +1255,26 @@ def plans_settings(request: Request, user: dict = Depends(current_admin)):
         {
             "request": request, "user": user,
             "plans": billing.list_plans(active_only=False),
+            "billing_cfg": settings.get_billing_config(),
             "flash": _pop_flash(request),
         },
     )
+
+
+@app.post("/settings/billing")
+def billing_settings_save(
+    request: Request,
+    suspension_time: str = Form(...),
+    user: dict = Depends(current_admin),
+):
+    try:
+        settings.save_billing_config(suspension_time=suspension_time)
+        events.log("billing_settings_saved", "settings", actor=user,
+                   details=f"suspension_time={suspension_time}", ip=_client_ip(request))
+        _flash(request, f"Hora de suspensión guardada: {suspension_time}", "success")
+    except ValueError as e:
+        _flash(request, str(e), "error")
+    return RedirectResponse("/settings/plans", status_code=303)
 
 
 @app.post("/settings/plans/new")

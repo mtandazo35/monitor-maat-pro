@@ -7,6 +7,7 @@
 
 {# === Tarjeta de estado === #}
 {% set d = plan_summary.days_until_due %}
+{% set susp = plan_summary.suspension_time %}
 {% set status_color = 'sc-green' if (plan_summary.is_paid and (d is none or d > 7)) else ('sc-amber' if (plan_summary.is_paid and d <= 7) else 'sc-red') %}
 {% set status_label = 'Al día' if (plan_summary.is_paid and (d is none or d > 7)) else ('Vence pronto' if (plan_summary.is_paid and d <= 7) else 'Impago') %}
 
@@ -19,12 +20,18 @@
         {% if d is not none and d > 0 %}
           <p class="muted" style="margin:0">
             Tu suscripción está activa hasta el <strong><span data-utc-date="{{ plan_summary.paid_until }}T00:00:00Z">{{ plan_summary.paid_until }}</span></strong>
-            ({{ d }} día{{ '' if d == 1 else 's' }} restante{{ '' if d == 1 else 's' }}).
+            a las <strong>{{ susp }}</strong> (Ecuador) — quedan {{ d }} día{{ '' if d == 1 else 's' }}.
           </p>
         {% elif d == 0 %}
-          <p class="muted" style="margin:0">Tu suscripción vence <strong>hoy</strong>. Renová para no perder acceso a la creación de tenants.</p>
+          <p class="muted" style="margin:0">
+            Tu suscripción vence <strong>hoy a las {{ susp }}</strong> (Ecuador).
+            Renová antes de esa hora para no perder acceso a la creación de tenants.
+          </p>
         {% else %}
-          <p class="muted" style="margin:0">Tu suscripción venció hace <strong>{{ d|abs }} día{{ '' if d|abs == 1 else 's' }}</strong>. No podés crear nuevos tenants hasta renovar.</p>
+          <p class="muted" style="margin:0">
+            Tu suscripción venció hace <strong>{{ d|abs }} día{{ '' if d|abs == 1 else 's' }}</strong>.
+            No podés crear nuevos tenants hasta renovar.
+          </p>
         {% endif %}
       {% else %}
         <p class="muted" style="margin:0">Aún no tenés un período activo.</p>
