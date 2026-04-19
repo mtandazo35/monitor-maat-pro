@@ -172,7 +172,13 @@ window.addEventListener('DOMContentLoaded', () => {
       function stop() { if (timer) { clearInterval(timer); timer = null; } }
       function onVis() { document.hidden ? stop() : start(); }
 
-      function formatTs(ts) { return (ts || '').replace('T', ' ').replace('Z', ''); }
+      function formatTs(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return ts;
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+      }
       function rolePillClass(role) {
         if (role === 'admin') return 'role-admin';
         if (role === 'user') return 'role-user';
