@@ -1,102 +1,215 @@
 {% extends "base.html" %}
 {% block title %}Tenants · MonitorMaat{% endblock %}
 {% block content %}
-<div class="row between">
-  <h1>{% if user.role == 'admin' %}Tenants (todos){% else %}Mis tenants{% endif %}</h1>
-  <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
-</div>
+<link rel="preload" href="/api/tenants{% if q %}?q={{ q|urlencode }}{% endif %}" as="fetch" crossorigin="use-credentials">
 
-{% if user.role == 'admin' %}
-<form method="get" action="/tenants" class="search-bar">
-  <input type="text" name="q" value="{{ q or '' }}"
-         placeholder="Buscar por nombre de tenant, usuario dueño o empresa…">
-  <button type="submit" class="btn">Buscar</button>
-  {% if q %}<a class="btn small" href="/tenants">Limpiar</a>{% endif %}
-</form>
-{% endif %}
+<div id="tenants-app" data-role="{{ user.role }}" data-initial-q="{{ q or '' }}" v-cloak>
+  <div class="row between">
+    <h1 v-text="role === 'admin' ? 'Tenants (todos)' : 'Mis tenants'"></h1>
+    <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
+  </div>
 
-{% if q and not tenants %}
-<p class="muted">No se encontraron tenants que coincidan con "{{ q }}".</p>
-{% endif %}
+  <form v-if="role === 'admin'" class="search-bar" @submit.prevent="onSearch">
+    <input type="text" v-model="q" placeholder="Buscar por nombre de tenant, usuario dueño o empresa…">
+    <button type="submit" class="btn">Buscar</button>
+    <a v-if="q" class="btn small" href="#" @click.prevent="clearSearch">Limpiar</a>
+  </form>
 
-{% if quota %}
-<div class="quota-bar">
-  Quota: <strong>{{ quota.used }}</strong> / {{ quota.total }} tenants usados
-</div>
-{% endif %}
+  <p v-if="!loading && q && tenants.length === 0" class="muted">
+    No se encontraron tenants que coincidan con "<span v-text="q"></span>".
+  </p>
 
-{% if tenants %}
-<div class="desktop-only tbl-wrap">
-<table class="tbl">
-  <thead>
-    <tr>
-      <th>Nombre</th>
-      {% if user.role == 'admin' %}<th>Empresa</th>{% endif %}
-      <th>Slot</th>
-      <th>VPN</th>
-      <th>Kuma</th>
-      <th>Subred VPN</th>
-      <th>OpenVPN</th>
-      <th>Kuma</th>
-      <th>IP pública</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for t in tenants %}
-    <tr>
-      <td><a href="/tenants/{{ t.name }}"><strong>{{ t.name }}</strong></a></td>
-      {% if user.role == 'admin' %}
-      <td>
-        {{ t.owner_company or t.owner_username or '—' }}
-        {% if t.owner_username %}<div class="muted small">{{ t.owner_username }}</div>{% endif %}
-      </td>
-      {% endif %}
-      <td>{{ t.slot }}</td>
-      <td>{{ t.vpn_port }}/tcp</td>
-      <td><a href="http://{{ t.public_ip }}:{{ t.kuma_port }}" target="_blank" rel="noopener">:{{ t.kuma_port }} ↗</a></td>
-      <td>{{ t.vpn_subnet }}/24</td>
-      <td><span class="status status-{{ t.ovpn_status }}">{{ t.ovpn_status }}</span></td>
-      <td><span class="status status-{{ t.kuma_status }}">{{ t.kuma_status }}</span></td>
-      <td class="muted">{{ t.public_ip }}</td>
-      <td><a class="btn small" href="/tenants/{{ t.name }}">Administrar</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+  <div v-if="quota" class="quota-bar">
+    Quota: <strong v-text="quota.used"></strong> / <span v-text="quota.total"></span> tenants usados
+  </div>
 
-<div class="mobile-only tenant-cards">
-  {% for t in tenants %}
-  <article class="tenant-card">
-    <div class="tenant-card-head">
-      <a href="/tenants/{{ t.name }}" class="tenant-card-name">{{ t.name }}</a>
-      <span class="muted">slot {{ t.slot }}</span>
+  <div v-if="loading" class="tbl-wrap desktop-only">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th v-if="role === 'admin'">Empresa</th>
+          <th>Slot</th><th>VPN</th><th>Kuma</th><th>Subred VPN</th>
+          <th>OpenVPN</th><th>Kuma</th><th>IP pública</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="n in 4" :key="n">
+          <td v-for="c in (role === 'admin' ? 10 : 9)" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div v-if="loading" class="mobile-only tenant-cards">
+    <article v-for="n in 3" :key="n" class="tenant-card">
+      <div class="tenant-card-head"><span class="sk-inline" style="min-width:8em"></span></div>
+      <div class="tenant-card-status"><span class="sk-inline" style="min-width:6em"></span></div>
+    </article>
+  </div>
+
+  <template v-if="!loading && tenants.length > 0">
+    <div class="desktop-only tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th v-if="role === 'admin'">Empresa</th>
+            <th>Slot</th>
+            <th>VPN</th>
+            <th>Kuma</th>
+            <th>Subred VPN</th>
+            <th>OpenVPN</th>
+            <th>Kuma</th>
+            <th>IP pública</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="t in tenants" :key="t.name">
+            <td><a :href="'/tenants/' + t.name"><strong v-text="t.name"></strong></a></td>
+            <td v-if="role === 'admin'">
+              <span v-text="t.owner_company || t.owner_username || '—'"></span>
+              <div v-if="t.owner_username" class="muted small" v-text="t.owner_username"></div>
+            </td>
+            <td v-text="t.slot"></td>
+            <td v-text="t.vpn_port + '/tcp'"></td>
+            <td><a :href="'http://' + t.public_ip + ':' + t.kuma_port" target="_blank" rel="noopener" v-text="':' + t.kuma_port + ' ↗'"></a></td>
+            <td v-text="t.vpn_subnet + '/24'"></td>
+            <td><span class="status" :class="'status-' + t.ovpn_status" v-text="t.ovpn_status"></span></td>
+            <td><span class="status" :class="'status-' + t.kuma_status" v-text="t.kuma_status"></span></td>
+            <td class="muted" v-text="t.public_ip"></td>
+            <td><a class="btn small" :href="'/tenants/' + t.name">Administrar</a></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-    {% if user.role == 'admin' and (t.owner_company or t.owner_username) %}
-    <div class="tenant-card-owner">
-      {{ t.owner_company or '—' }} <span class="muted">({{ t.owner_username }})</span>
+
+    <div class="mobile-only tenant-cards">
+      <article v-for="t in tenants" :key="t.name" class="tenant-card">
+        <div class="tenant-card-head">
+          <a :href="'/tenants/' + t.name" class="tenant-card-name" v-text="t.name"></a>
+          <span class="muted">slot <span v-text="t.slot"></span></span>
+        </div>
+        <div v-if="role === 'admin' && (t.owner_company || t.owner_username)" class="tenant-card-owner">
+          <span v-text="t.owner_company || '—'"></span>
+          <span class="muted">(<span v-text="t.owner_username"></span>)</span>
+        </div>
+        <div class="tenant-card-status">
+          <span class="status" :class="'status-' + t.ovpn_status">VPN <span v-text="t.ovpn_status"></span></span>
+          <span class="status" :class="'status-' + t.kuma_status">Kuma <span v-text="t.kuma_status"></span></span>
+        </div>
+        <dl class="tenant-card-grid">
+          <dt>OpenVPN</dt><dd><code v-text="t.public_ip + ':' + t.vpn_port + '/tcp'"></code></dd>
+          <dt>Kuma</dt>
+          <dd><a :href="'http://' + t.public_ip + ':' + t.kuma_port" target="_blank" rel="noopener" v-text="':' + t.kuma_port + ' ↗'"></a></dd>
+          <dt>Subred VPN</dt><dd><code v-text="t.vpn_subnet + '/24'"></code></dd>
+        </dl>
+        <a class="btn primary" :href="'/tenants/' + t.name">Administrar →</a>
+      </article>
     </div>
-    {% endif %}
-    <div class="tenant-card-status">
-      <span class="status status-{{ t.ovpn_status }}">VPN {{ t.ovpn_status }}</span>
-      <span class="status status-{{ t.kuma_status }}">Kuma {{ t.kuma_status }}</span>
-    </div>
-    <dl class="tenant-card-grid">
-      <dt>OpenVPN</dt><dd><code>{{ t.public_ip }}:{{ t.vpn_port }}/tcp</code></dd>
-      <dt>Kuma</dt>
-      <dd>
-        <a href="http://{{ t.public_ip }}:{{ t.kuma_port }}" target="_blank" rel="noopener">
-          :{{ t.kuma_port }} ↗
-        </a>
-      </dd>
-      <dt>Subred VPN</dt><dd><code>{{ t.vpn_subnet }}/24</code></dd>
-    </dl>
-    <a class="btn primary" href="/tenants/{{ t.name }}">Administrar →</a>
-  </article>
-  {% endfor %}
+  </template>
+
+  <p v-if="!loading && !q && tenants.length === 0" class="muted">No hay tenants todavía. Creá el primero.</p>
 </div>
-{% else %}
-<p class="muted">No hay tenants todavía. Creá el primero.</p>
-{% endif %}
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('tenants-app');
+  const role = root.dataset.role;
+  const initialQ = root.dataset.initialQ || '';
+  const REFRESH_MS = 5000;
+
+  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const error = ref(false);
+      const q = ref(initialQ);
+      const tenants = ref([]);
+      const quota = ref(null);
+
+      let timer = null;
+      let inflight = null;
+      let debounceT = null;
+
+      async function fetchData() {
+        if (document.hidden) return;
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        const url = '/api/tenants' + (q.value ? '?q=' + encodeURIComponent(q.value) : '');
+        try {
+          const r = await fetch(url, { credentials: 'same-origin', signal: inflight.signal });
+          if (!r.ok) { error.value = true; return; }
+          const d = await r.json();
+          tenants.value = d.tenants;
+          quota.value = d.quota;
+          error.value = false;
+          loading.value = false;
+        } catch (e) {
+          if (e.name !== 'AbortError') error.value = true;
+        } finally {
+          inflight = null;
+        }
+      }
+
+      function syncUrl() {
+        const url = new URL(window.location.href);
+        if (q.value) url.searchParams.set('q', q.value);
+        else url.searchParams.delete('q');
+        window.history.replaceState({}, '', url);
+      }
+
+      function onSearch() {
+        if (debounceT) clearTimeout(debounceT);
+        loading.value = true;
+        syncUrl();
+        fetchData();
+      }
+
+      function clearSearch() {
+        q.value = '';
+        onSearch();
+      }
+
+      function start() { stop(); fetchData(); timer = setInterval(fetchData, REFRESH_MS); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function onVis() { document.hidden ? stop() : start(); }
+
+      onMounted(() => {
+        start();
+        document.addEventListener('visibilitychange', onVis);
+      });
+      onBeforeUnmount(() => {
+        stop();
+        document.removeEventListener('visibilitychange', onVis);
+        if (inflight) inflight.abort();
+      });
+
+      return { loading, error, role, q, tenants, quota, onSearch, clearSearch };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#tenants-app');
+});
+</script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block;
+    min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px;
+    color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+</style>
 {% endblock %}

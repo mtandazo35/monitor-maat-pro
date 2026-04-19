@@ -1,103 +1,193 @@
 {% extends "base.html" %}
 {% block title %}Usuarios · MonitorMaat Admin{% endblock %}
 {% block content %}
-<div class="row between">
-  <h1>Usuarios</h1>
-  <a class="btn primary" href="/users/new">+ Nuevo usuario</a>
-</div>
+<link rel="preload" href="/api/users{% if q %}?q={{ q|urlencode }}{% endif %}" as="fetch" crossorigin="use-credentials">
 
-<form method="get" action="/users" class="search-bar">
-  <input type="text" name="q" value="{{ q or '' }}"
-         placeholder="Buscar por usuario, nombre, apellido, empresa o email…">
-  <button type="submit" class="btn">Buscar</button>
-  {% if q %}<a class="btn small" href="/users">Limpiar</a>{% endif %}
-</form>
+<div id="users-app" data-initial-q="{{ q or '' }}" v-cloak>
+  <div class="row between">
+    <h1>Usuarios</h1>
+    <a class="btn primary" href="/users/new">+ Nuevo usuario</a>
+  </div>
 
-{% if q and not users %}
-<p class="muted">No se encontraron usuarios que coincidan con "{{ q }}".</p>
-{% elif users %}
-<div class="desktop-only tbl-wrap">
-<table class="tbl">
-  <thead>
-    <tr>
-      <th>Usuario</th>
-      <th>Nombre</th>
-      <th>Empresa</th>
-      <th>Contacto</th>
-      <th>Rol</th>
-      <th>Tenants</th>
-      <th>Quota</th>
-      <th>Creado</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for u in users %}
-    <tr>
-      <td><strong>{{ u.username }}</strong></td>
-      <td>
-        {% set fullname = ((u.first_name or '') ~ ' ' ~ (u.last_name or '')).strip() %}
-        {{ fullname or '—' }}
-      </td>
-      <td>{{ u.company_name or '—' }}</td>
-      <td>
-        {% if u.email or u.phone %}
-          {% if u.email %}<div class="small"><a href="mailto:{{ u.email }}">{{ u.email }}</a></div>{% endif %}
-          {% if u.phone %}<div class="small muted">{{ u.phone }}</div>{% endif %}
-        {% else %}—{% endif %}
-      </td>
-      <td><span class="role-pill role-{{ u.role }}">{{ u.role }}</span></td>
-      <td>{{ u.tenant_count }}</td>
-      <td>
-        {% if u.role == 'admin' %}<span class="muted">∞</span>
-        {% elif u.tenant_quota %}{{ u.tenant_quota }}
-        {% else %}<span class="muted">0</span>
-        {% endif %}
-      </td>
-      <td class="muted small">{{ u.created_at[:10] if u.created_at else '—' }}</td>
-      <td>
-        <a class="btn small" href="/users/{{ u.id }}/edit">Editar</a>
-        <form method="post" action="/users/{{ u.id }}/delete" class="inline"
-              onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');">
-          <button class="btn small warn">Borrar</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+  <form class="search-bar" @submit.prevent="onSearch">
+    <input type="text" v-model="q" placeholder="Buscar por usuario, nombre, apellido, empresa o email…">
+    <button type="submit" class="btn">Buscar</button>
+    <a v-if="q" class="btn small" href="#" @click.prevent="clearSearch">Limpiar</a>
+  </form>
 
-<div class="mobile-only user-list-cards">
-  {% for u in users %}
-  <article class="user-card">
-    <div class="user-card-head">
-      <code class="user-name">{{ u.username }}</code>
-      <span class="role-pill role-{{ u.role }}">{{ u.role }}</span>
+  <p v-if="!loading && q && users.length === 0" class="muted">
+    No se encontraron usuarios que coincidan con "<span v-text="q"></span>".
+  </p>
+
+  <div v-if="loading" class="tbl-wrap desktop-only">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Usuario</th><th>Nombre</th><th>Empresa</th><th>Contacto</th>
+          <th>Rol</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="n in 4" :key="n">
+          <td v-for="c in 9" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <template v-if="!loading && users.length > 0">
+    <div class="desktop-only tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Usuario</th><th>Nombre</th><th>Empresa</th><th>Contacto</th>
+            <th>Rol</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in users" :key="u.id">
+            <td><strong v-text="u.username"></strong></td>
+            <td v-text="fullName(u) || '—'"></td>
+            <td v-text="u.company_name || '—'"></td>
+            <td>
+              <template v-if="u.email || u.phone">
+                <div v-if="u.email" class="small"><a :href="'mailto:' + u.email" v-text="u.email"></a></div>
+                <div v-if="u.phone" class="small muted" v-text="u.phone"></div>
+              </template>
+              <template v-else>—</template>
+            </td>
+            <td><span class="role-pill" :class="'role-' + u.role" v-text="u.role"></span></td>
+            <td v-text="u.tenant_count"></td>
+            <td>
+              <span v-if="u.role === 'admin'" class="muted">∞</span>
+              <span v-else-if="u.tenant_quota" v-text="u.tenant_quota"></span>
+              <span v-else class="muted">0</span>
+            </td>
+            <td class="muted small" v-text="u.created_at ? u.created_at.slice(0, 10) : '—'"></td>
+            <td>
+              <a class="btn small" :href="'/users/' + u.id + '/edit'">Editar</a>
+              <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
+                    @submit="confirmDelete($event, u.username)">
+                <button class="btn small warn">Borrar</button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-    <dl class="user-card-grid">
-      {% set fullname = ((u.first_name or '') ~ ' ' ~ (u.last_name or '')).strip() %}
-      {% if fullname %}<dt>Nombre</dt><dd>{{ fullname }}</dd>{% endif %}
-      <dt>Empresa</dt><dd>{{ u.company_name or '—' }}</dd>
-      {% if u.email %}<dt>Email</dt><dd><a href="mailto:{{ u.email }}">{{ u.email }}</a></dd>{% endif %}
-      {% if u.phone %}<dt>Tel</dt><dd>{{ u.phone }}</dd>{% endif %}
-      <dt>Tenants</dt>
-      <dd>
-        {{ u.tenant_count }}
-        {% if u.role != 'admin' %}/ {{ u.tenant_quota or 0 }}{% endif %}
-      </dd>
-    </dl>
-    <div class="row">
-      <a class="btn primary" href="/users/{{ u.id }}/edit">Editar</a>
-      <form method="post" action="/users/{{ u.id }}/delete" class="inline"
-            onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');">
-        <button class="btn warn">Borrar</button>
-      </form>
+
+    <div class="mobile-only user-list-cards">
+      <article v-for="u in users" :key="u.id" class="user-card">
+        <div class="user-card-head">
+          <code class="user-name" v-text="u.username"></code>
+          <span class="role-pill" :class="'role-' + u.role" v-text="u.role"></span>
+        </div>
+        <dl class="user-card-grid">
+          <template v-if="fullName(u)">
+            <dt>Nombre</dt><dd v-text="fullName(u)"></dd>
+          </template>
+          <dt>Empresa</dt><dd v-text="u.company_name || '—'"></dd>
+          <template v-if="u.email">
+            <dt>Email</dt><dd><a :href="'mailto:' + u.email" v-text="u.email"></a></dd>
+          </template>
+          <template v-if="u.phone">
+            <dt>Tel</dt><dd v-text="u.phone"></dd>
+          </template>
+          <dt>Tenants</dt>
+          <dd>
+            <span v-text="u.tenant_count"></span>
+            <span v-if="u.role !== 'admin'"> / <span v-text="u.tenant_quota || 0"></span></span>
+          </dd>
+        </dl>
+        <div class="row">
+          <a class="btn primary" :href="'/users/' + u.id + '/edit'">Editar</a>
+          <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
+                @submit="confirmDelete($event, u.username)">
+            <button class="btn warn">Borrar</button>
+          </form>
+        </div>
+      </article>
     </div>
-  </article>
-  {% endfor %}
+  </template>
+
+  <p v-if="!loading && !q && users.length === 0" class="muted">No hay usuarios todavía.</p>
 </div>
-{% else %}
-<p class="muted">No hay usuarios todavía.</p>
-{% endif %}
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('users-app');
+  const initialQ = root.dataset.initialQ || '';
+
+  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const q = ref(initialQ);
+      const users = ref([]);
+
+      let inflight = null;
+
+      async function fetchData() {
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        const url = '/api/users' + (q.value ? '?q=' + encodeURIComponent(q.value) : '');
+        try {
+          const r = await fetch(url, { credentials: 'same-origin', signal: inflight.signal });
+          if (!r.ok) return;
+          const d = await r.json();
+          users.value = d.users;
+          loading.value = false;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        } finally {
+          inflight = null;
+        }
+      }
+
+      function syncUrl() {
+        const url = new URL(window.location.href);
+        if (q.value) url.searchParams.set('q', q.value);
+        else url.searchParams.delete('q');
+        window.history.replaceState({}, '', url);
+      }
+
+      function onSearch() { loading.value = true; syncUrl(); fetchData(); }
+      function clearSearch() { q.value = ''; onSearch(); }
+
+      function fullName(u) {
+        return ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
+      }
+      function confirmDelete(ev, username) {
+        if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
+      }
+
+      onMounted(fetchData);
+      onBeforeUnmount(() => { if (inflight) inflight.abort(); });
+
+      return { loading, q, users, onSearch, clearSearch, fullName, confirmDelete };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#users-app');
+});
+</script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block;
+    min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px;
+    color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+</style>
 {% endblock %}

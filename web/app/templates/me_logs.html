@@ -1,62 +1,143 @@
 {% extends "base.html" %}
 {% block title %}Mis logs · MonitorMaat{% endblock %}
 {% block content %}
-<div class="row between">
-  <h1>Mis logs</h1>
-</div>
+<link rel="preload" href="/api/me/logs" as="fetch" crossorigin="use-credentials">
 
-<p class="muted">Eventos de tus servicios y de tus inicios de sesión.</p>
+<div id="me-logs-app" data-username="{{ user.username }}" v-cloak>
+  <div class="row between">
+    <h1>Mis logs <span class="live-dot" :class="{ stalled: error }" title="Actualiza cada 10s"></span></h1>
+  </div>
 
-{% if events %}
-<div class="desktop-only tbl-wrap">
-  <table class="tbl logs-tbl">
-    <thead>
-      <tr>
-        <th>Fecha</th>
-        <th>Categoría</th>
-        <th>Acción</th>
-        <th>Tenant</th>
-        <th>Detalle</th>
-        <th>IP</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in events %}
-      <tr class="ev-{{ e.severity }}">
-        <td class="muted small ts">{{ e.ts|replace('T',' ')|replace('Z','') }}</td>
-        <td><code>{{ e.category }}</code></td>
-        <td>
-          <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
-          {% if e.actor_username and e.actor_username != user.username %}
-            <span class="muted small">por {{ e.actor_username }}</span>
-          {% endif %}
-        </td>
-        <td>{% if e.tenant_name %}<code>{{ e.tenant_name }}</code>{% else %}—{% endif %}</td>
-        <td class="muted small">{{ e.details or '' }}</td>
-        <td class="muted small">{{ e.ip or '' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+  <p class="muted">Eventos de tus servicios y de tus inicios de sesión.</p>
 
-<div class="mobile-only logs-cards">
-  {% for e in events %}
-  <article class="log-card ev-{{ e.severity }}">
-    <div class="row between">
-      <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
-      <span class="muted small">{{ e.ts|replace('T',' ')|replace('Z','') }}</span>
+  <div v-if="loading" class="tbl-wrap desktop-only">
+    <table class="tbl logs-tbl">
+      <thead>
+        <tr><th>Fecha</th><th>Categoría</th><th>Acción</th><th>Tenant</th><th>Detalle</th><th>IP</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="n in 6" :key="n">
+          <td v-for="c in 6" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p v-if="!loading && events.length === 0" class="muted">Aún no hay eventos.</p>
+
+  <template v-if="!loading && events.length > 0">
+    <div class="desktop-only tbl-wrap">
+      <table class="tbl logs-tbl">
+        <thead>
+          <tr><th>Fecha</th><th>Categoría</th><th>Acción</th><th>Tenant</th><th>Detalle</th><th>IP</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(e, i) in events" :key="i" :class="'ev-' + e.severity">
+            <td class="muted small ts" v-text="formatTs(e.ts)"></td>
+            <td><code v-text="e.category"></code></td>
+            <td>
+              <span class="ev-action" :class="'sev-' + e.severity" v-text="e.action"></span>
+              <span v-if="e.actor_username && e.actor_username !== username" class="muted small">
+                por <span v-text="e.actor_username"></span>
+              </span>
+            </td>
+            <td>
+              <code v-if="e.tenant_name" v-text="e.tenant_name"></code>
+              <template v-else>—</template>
+            </td>
+            <td class="muted small" v-text="e.details || ''"></td>
+            <td class="muted small" v-text="e.ip || ''"></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-    {% if e.tenant_name %}<div class="muted small">tenant <code>{{ e.tenant_name }}</code></div>{% endif %}
-    {% if e.actor_username and e.actor_username != user.username %}
-      <div class="muted small">por {{ e.actor_username }}</div>
-    {% endif %}
-    {% if e.details %}<div class="muted small">{{ e.details }}</div>{% endif %}
-    {% if e.ip %}<div class="muted small">desde {{ e.ip }}</div>{% endif %}
-  </article>
-  {% endfor %}
+
+    <div class="mobile-only logs-cards">
+      <article v-for="(e, i) in events" :key="i" class="log-card" :class="'ev-' + e.severity">
+        <div class="row between">
+          <span class="ev-action" :class="'sev-' + e.severity" v-text="e.action"></span>
+          <span class="muted small" v-text="formatTs(e.ts)"></span>
+        </div>
+        <div v-if="e.tenant_name" class="muted small">tenant <code v-text="e.tenant_name"></code></div>
+        <div v-if="e.actor_username && e.actor_username !== username" class="muted small">
+          por <span v-text="e.actor_username"></span>
+        </div>
+        <div v-if="e.details" class="muted small" v-text="e.details"></div>
+        <div v-if="e.ip" class="muted small">desde <span v-text="e.ip"></span></div>
+      </article>
+    </div>
+  </template>
 </div>
-{% else %}
-<p class="muted">Aún no hay eventos.</p>
-{% endif %}
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('me-logs-app');
+  const username = root.dataset.username;
+  const REFRESH_MS = 10000;
+
+  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const error = ref(false);
+      const events = ref([]);
+
+      let timer = null;
+      let inflight = null;
+
+      async function fetchData() {
+        if (document.hidden) return;
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        try {
+          const r = await fetch('/api/me/logs', { credentials: 'same-origin', signal: inflight.signal });
+          if (!r.ok) { error.value = true; return; }
+          const d = await r.json();
+          events.value = d.events;
+          error.value = false;
+          loading.value = false;
+        } catch (e) {
+          if (e.name !== 'AbortError') error.value = true;
+        } finally {
+          inflight = null;
+        }
+      }
+
+      function start() { stop(); fetchData(); timer = setInterval(fetchData, REFRESH_MS); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function onVis() { document.hidden ? stop() : start(); }
+
+      function formatTs(ts) { return (ts || '').replace('T', ' ').replace('Z', ''); }
+
+      onMounted(() => {
+        start();
+        document.addEventListener('visibilitychange', onVis);
+      });
+      onBeforeUnmount(() => {
+        stop();
+        document.removeEventListener('visibilitychange', onVis);
+        if (inflight) inflight.abort();
+      });
+
+      return { loading, error, events, username, formatTs };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#me-logs-app');
+});
+</script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block; min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%; animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px; color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .live-dot.stalled { background: #f59e0b !important; }
+</style>
 {% endblock %}

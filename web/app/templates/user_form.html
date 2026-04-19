@@ -2,7 +2,10 @@
 {% from "_macros.html" import pwd_field %}
 {% block title %}{{ 'Editar usuario' if edit else 'Nuevo usuario' }} · MonitorMaat Admin{% endblock %}
 {% block content %}
-<section class="card card-narrow">
+<section id="user-form-app" class="card card-narrow"
+         data-edit-role="{{ edit.role if edit else '' }}"
+         data-is-edit="{{ '1' if edit else '0' }}"
+         v-cloak>
   <h1>{{ 'Editar usuario' if edit else 'Nuevo usuario' }}</h1>
   {% if edit %}
     <p class="muted">Editando <strong>{{ edit.username }}</strong></p>
@@ -20,32 +23,58 @@
     {% endif %}
 
     <label>Rol
-      <select name="role">
-        <option value="user" {% if edit and edit.role == 'user' %}selected{% endif %}>user</option>
-        <option value="admin" {% if edit and edit.role == 'admin' %}selected{% endif %}>admin</option>
+      <select name="role" v-model="role">
+        <option value="user">user</option>
+        <option value="admin">admin</option>
       </select>
     </label>
 
-    <label>Quota de tenants (vacío o 0 = ninguno; admin ignora la quota)
+    <label v-show="role !== 'admin'">Quota de tenants (vacío o 0 = ninguno)
       <input type="number" name="tenant_quota" min="0"
              value="{{ edit.tenant_quota if edit and edit.tenant_quota else '' }}"
              placeholder="ej: 5">
     </label>
+    <p v-show="role === 'admin'" class="muted" style="font-size:.85rem;margin:-6px 0 14px">
+      El rol <strong>admin</strong> ignora la quota de tenants.
+    </p>
 
     {% if not edit %}
     <label>Password (opcional)
-      {{ pwd_field('new-pwd', 'password', autocomplete='new-password', placeholder='dejá vacío para autogenerar y enviar por email') }}
+      <span class="pwd-wrap">
+        <input id="new-pwd" name="password" :type="showPwd ? 'text' : 'password'"
+               v-model="pwd" autocomplete="new-password"
+               placeholder="dejá vacío para autogenerar y enviar por email">
+        <button type="button" class="pwd-toggle" :class="{ showing: showPwd }" @click="showPwd = !showPwd" tabindex="-1">
+          <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+        </button>
+      </span>
       <small class="muted">
         Vacío = generamos una fuerte y la mandamos por email (o te la mostramos).
-        Cargada = mínimo 8 chars + mayúsculas, minúsculas, números y símbolos.
       </small>
     </label>
     {% else %}
     <label>Cambiar password (opcional)
-      {{ pwd_field('edit-pwd', 'new_password', autocomplete='new-password', placeholder='dejá vacío para no tocar') }}
+      <span class="pwd-wrap">
+        <input id="edit-pwd" name="new_password" :type="showPwd ? 'text' : 'password'"
+               v-model="pwd" autocomplete="new-password"
+               placeholder="dejá vacío para no tocar">
+        <button type="button" class="pwd-toggle" :class="{ showing: showPwd }" @click="showPwd = !showPwd" tabindex="-1">
+          <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+        </button>
+      </span>
       <small class="muted">Si cargás algo: 8+ chars, mayúsculas, minúsculas, números, símbolos.</small>
     </label>
     {% endif %}
+
+    <ul v-show="pwd.length > 0" class="pwd-rules" style="margin-top:6px">
+      <li :class="{ ok: pwdRules.len }">≥ 8 caracteres</li>
+      <li :class="{ ok: pwdRules.low }">una minúscula</li>
+      <li :class="{ ok: pwdRules.upp }">una mayúscula</li>
+      <li :class="{ ok: pwdRules.dig }">un número</li>
+      <li :class="{ ok: pwdRules.sym }">un símbolo</li>
+    </ul>
 
     <h3 class="form-section">Datos del cliente</h3>
 
@@ -103,10 +132,44 @@
   {% if edit %}
   <hr style="border-color:var(--border);margin:20px 0">
   <h3 class="form-section">Acciones rápidas</h3>
-  <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline"
-        onsubmit="return confirm('¿Regenerar password de {{ edit.username }} y forzar cambio en próximo login?');">
+  <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline" @submit="confirmReset">
     <button class="btn">↻ Regenerar password (manda email si tiene)</button>
   </form>
   {% endif %}
 </section>
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('user-form-app');
+  const initialRole = root.dataset.editRole || 'user';
+  const isEdit = root.dataset.isEdit === '1';
+  const editUsername = {{ (edit.username | tojson) if edit else '""' }};
+
+  const { createApp, ref, computed } = Vue;
+  createApp({
+    setup() {
+      const role = ref(initialRole);
+      const pwd = ref('');
+      const showPwd = ref(false);
+      const pwdRules = computed(() => ({
+        len: pwd.value.length >= 8,
+        low: /[a-z]/.test(pwd.value),
+        upp: /[A-Z]/.test(pwd.value),
+        dig: /\d/.test(pwd.value),
+        sym: /[^A-Za-z0-9]/.test(pwd.value),
+      }));
+      function confirmReset(ev) {
+        if (!confirm('¿Regenerar password de ' + editUsername + ' y forzar cambio en próximo login?')) {
+          ev.preventDefault();
+        }
+      }
+      return { role, pwd, showPwd, pwdRules, confirmReset };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#user-form-app');
+});
+</script>
+
+<style>[v-cloak] { visibility: hidden; }</style>
 {% endblock %}

@@ -5,7 +5,15 @@
   <h1>Configuración SMTP</h1>
 </div>
 
-<section class="card">
+<section id="smtp-app" class="card"
+         data-init-host="{{ cfg.host or '' }}"
+         data-init-port="{{ cfg.port or 587 }}"
+         data-init-user="{{ cfg.user or '' }}"
+         data-init-from="{{ cfg.from or '' }}"
+         data-init-security="{{ cfg.security or 'tls' }}"
+         data-init-public-url="{{ cfg.public_url or '' }}"
+         data-password-set="{{ '1' if cfg.password_set else '0' }}"
+         v-cloak>
   <h2>Servidor de correo saliente</h2>
   <p class="muted">
     Estos datos se usan para enviar credenciales a usuarios nuevos y notificaciones.
@@ -15,44 +23,48 @@
   <form method="post" action="/settings/smtp">
     <div class="smtp-grid">
       <label>Host / servidor
-        <input name="smtp_host" value="{{ cfg.host or '' }}"
-               placeholder="mail.tudominio.com" required>
+        <input name="smtp_host" v-model="host" placeholder="mail.tudominio.com" required>
       </label>
 
       <label>Puerto
-        <input name="smtp_port" type="number" min="1" max="65535"
-               value="{{ cfg.port or 587 }}" required>
+        <input name="smtp_port" type="number" min="1" max="65535" v-model="port" required>
+        <small v-if="portMismatch" class="muted" style="color: #f59e0b">
+          ⚠ Sugerido para [[ security.toUpperCase() ]]: <span v-text="suggestedPort"></span>
+        </small>
       </label>
 
       <label>Usuario / correo
-        <input name="smtp_user" value="{{ cfg.user or '' }}"
-               placeholder="facturacion@tudominio.com" required autocomplete="off">
+        <input name="smtp_user" v-model="user" placeholder="facturacion@tudominio.com" required autocomplete="off">
       </label>
 
       <label>Contraseña
-        <input name="smtp_password" type="password" autocomplete="new-password"
-               placeholder="{{ '••••••••• (cargada — dejá vacío para mantener)' if cfg.password_set else '' }}">
+        <span class="pwd-wrap">
+          <input id="smtp-pwd" name="smtp_password" :type="showPwd ? 'text' : 'password'" autocomplete="new-password"
+                 :placeholder="passwordSet ? '••••••••• (cargada — dejá vacío para mantener)' : ''">
+          <button type="button" class="pwd-toggle" :class="{ showing: showPwd }" @click="showPwd = !showPwd" tabindex="-1">
+            <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+          </button>
+        </span>
       </label>
 
       <label>Seguridad
-        <select name="smtp_security">
-          <option value="ssl"  {% if cfg.security == 'ssl'  %}selected{% endif %}>SSL (puerto 465)</option>
-          <option value="tls"  {% if cfg.security == 'tls'  %}selected{% endif %}>TLS / STARTTLS (puerto 587)</option>
-          <option value="none" {% if cfg.security == 'none' %}selected{% endif %}>NONE (sin cifrado)</option>
+        <select name="smtp_security" v-model="security">
+          <option value="ssl">SSL (puerto 465)</option>
+          <option value="tls">TLS / STARTTLS (puerto 587)</option>
+          <option value="none">NONE (sin cifrado)</option>
         </select>
         <small class="muted">SSL=465 · TLS/STARTTLS=587 · NONE=sin cifrado</small>
       </label>
 
       <label>From (remitente)
-        <input name="smtp_from" value="{{ cfg.from or '' }}"
-               placeholder="kumavpn@tudominio.com">
+        <input name="smtp_from" v-model="from_" placeholder="kumavpn@tudominio.com">
         <small class="muted">Si lo dejás vacío, se usa el usuario.</small>
       </label>
     </div>
 
     <label>URL pública del panel (incluida en los emails)
-      <input name="public_url" value="{{ cfg.public_url or '' }}"
-             placeholder="https://kumavpn.tudominio.com">
+      <input name="public_url" v-model="publicUrl" placeholder="https://kumavpn.tudominio.com">
       <small class="muted">Vacío → se arma con la IP pública y el puerto del panel.</small>
     </label>
 
@@ -73,4 +85,40 @@
     <button type="submit" class="btn">Enviar email de test</button>
   </form>
 </section>
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('smtp-app');
+  const init = root.dataset;
+
+  const { createApp, ref, computed } = Vue;
+  createApp({
+    setup() {
+      const host = ref(init.initHost);
+      const port = ref(init.initPort);
+      const user = ref(init.initUser);
+      const from_ = ref(init.initFrom);
+      const security = ref(init.initSecurity);
+      const publicUrl = ref(init.initPublicUrl);
+      const showPwd = ref(false);
+      const passwordSet = init.passwordSet === '1';
+
+      const suggestedPort = computed(() => {
+        if (security.value === 'ssl') return 465;
+        if (security.value === 'tls') return 587;
+        return 25;
+      });
+      const portMismatch = computed(() =>
+        security.value !== 'none' && Number(port.value) !== suggestedPort.value
+      );
+
+      return { host, port, user, from_, security, publicUrl, showPwd, passwordSet, suggestedPort, portMismatch };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#smtp-app');
+});
+</script>
+
+<style>[v-cloak] { visibility: hidden; }</style>
 {% endblock %}

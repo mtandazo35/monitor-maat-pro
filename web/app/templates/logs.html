@@ -1,101 +1,219 @@
 {% extends "base.html" %}
 {% block title %}Logs · MonitorMaat Admin{% endblock %}
 {% block content %}
-<div class="row between">
-  <h1>Eventos del sistema</h1>
-</div>
+<link rel="preload" href="/api/logs" as="fetch" crossorigin="use-credentials">
 
-<form method="get" action="/logs" class="logs-filters">
-  <div class="filter-group">
-    <span class="filter-label">Origen:</span>
-    <a class="chip {% if not filters.source %}chip-on{% endif %}"
-       href="/logs?{% if filters.category %}category={{ filters.category }}&{% endif %}{% if filters.q %}q={{ filters.q }}{% endif %}">Todos</a>
-    {% for s, label in [('system','Sistema'),('admin','Admin'),('user','Clientes')] %}
-    <a class="chip {% if filters.source == s %}chip-on{% endif %}"
-       href="/logs?source={{ s }}{% if filters.category %}&category={{ filters.category }}{% endif %}{% if filters.q %}&q={{ filters.q }}{% endif %}">{{ label }}</a>
-    {% endfor %}
+<div id="logs-app"
+     data-categories='{{ categories|tojson }}'
+     data-initial-source="{{ filters.source or '' }}"
+     data-initial-category="{{ filters.category or '' }}"
+     data-initial-q="{{ filters.q or '' }}"
+     v-cloak>
+  <div class="row between">
+    <h1>Eventos del sistema <span class="live-dot" :class="{ stalled: error }" title="Actualiza cada 10s"></span></h1>
   </div>
 
-  <div class="filter-group">
-    <select name="category" onchange="this.form.submit()">
-      <option value="">Todas las categorías</option>
-      {% for c in categories %}
-      <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
-      {% endfor %}
-    </select>
-    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="Buscar usuario, tenant, acción, detalle…">
-    {% if filters.source %}<input type="hidden" name="source" value="{{ filters.source }}">{% endif %}
-    <button type="submit" class="btn">Aplicar</button>
-    {% if filters.source or filters.category or filters.q %}
-    <a class="btn small" href="/logs">Limpiar</a>
-    {% endif %}
+  <form class="logs-filters" @submit.prevent="apply">
+    <div class="filter-group">
+      <span class="filter-label">Origen:</span>
+      <a class="chip" :class="{ 'chip-on': !source }" href="#" @click.prevent="setSource('')">Todos</a>
+      <a v-for="opt in sourceOpts" :key="opt.value"
+         class="chip" :class="{ 'chip-on': source === opt.value }"
+         href="#" @click.prevent="setSource(opt.value)" v-text="opt.label"></a>
+    </div>
+
+    <div class="filter-group">
+      <select v-model="category" @change="apply">
+        <option value="">Todas las categorías</option>
+        <option v-for="c in categories" :key="c" :value="c" v-text="c"></option>
+      </select>
+      <input type="text" v-model="q" placeholder="Buscar usuario, tenant, acción, detalle…">
+      <button type="submit" class="btn">Aplicar</button>
+      <a v-if="source || category || q" class="btn small" href="#" @click.prevent="clearAll">Limpiar</a>
+    </div>
+  </form>
+
+  <div v-if="loading" class="tbl-wrap desktop-only">
+    <table class="tbl logs-tbl">
+      <thead>
+        <tr><th>Fecha</th><th>Origen</th><th>Actor</th><th>Categoría</th><th>Acción</th><th>Tenant</th><th>Sobre</th><th>Detalle</th><th>IP</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="n in 6" :key="n">
+          <td v-for="c in 9" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+        </tr>
+      </tbody>
+    </table>
   </div>
-</form>
 
-{% if events %}
-<div class="desktop-only tbl-wrap">
-  <table class="tbl logs-tbl">
-    <thead>
-      <tr>
-        <th>Fecha</th>
-        <th>Origen</th>
-        <th>Actor</th>
-        <th>Categoría</th>
-        <th>Acción</th>
-        <th>Tenant</th>
-        <th>Sobre</th>
-        <th>Detalle</th>
-        <th>IP</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in events %}
-      <tr class="ev-{{ e.severity }}">
-        <td class="muted small ts">{{ e.ts|replace('T',' ')|replace('Z','') }}</td>
-        <td>
-          {% if e.actor_role == 'admin' %}<span class="role-pill role-admin">admin</span>
-          {% elif e.actor_role == 'user' %}<span class="role-pill role-user">user</span>
-          {% else %}<span class="role-pill role-system">sistema</span>
-          {% endif %}
-        </td>
-        <td>{{ e.actor_username or '—' }}</td>
-        <td><code>{{ e.category }}</code></td>
-        <td>
-          <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
-        </td>
-        <td>{% if e.tenant_name %}<code>{{ e.tenant_name }}</code>{% else %}—{% endif %}</td>
-        <td>{% if e.target_username %}<code>{{ e.target_username }}</code>{% else %}—{% endif %}</td>
-        <td class="muted small">{{ e.details or '' }}</td>
-        <td class="muted small">{{ e.ip or '' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <p v-if="!loading && events.length === 0" class="muted">No hay eventos que coincidan con esos filtros.</p>
+
+  <template v-if="!loading && events.length > 0">
+    <div class="desktop-only tbl-wrap">
+      <table class="tbl logs-tbl">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Origen</th><th>Actor</th><th>Categoría</th>
+            <th>Acción</th><th>Tenant</th><th>Sobre</th><th>Detalle</th><th>IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(e, i) in events" :key="i" :class="'ev-' + e.severity">
+            <td class="muted small ts" v-text="formatTs(e.ts)"></td>
+            <td>
+              <span class="role-pill" :class="rolePillClass(e.actor_role)" v-text="rolePillLabel(e.actor_role)"></span>
+            </td>
+            <td v-text="e.actor_username || '—'"></td>
+            <td><code v-text="e.category"></code></td>
+            <td><span class="ev-action" :class="'sev-' + e.severity" v-text="e.action"></span></td>
+            <td>
+              <code v-if="e.tenant_name" v-text="e.tenant_name"></code>
+              <template v-else>—</template>
+            </td>
+            <td>
+              <code v-if="e.target_username" v-text="e.target_username"></code>
+              <template v-else>—</template>
+            </td>
+            <td class="muted small" v-text="e.details || ''"></td>
+            <td class="muted small" v-text="e.ip || ''"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mobile-only logs-cards">
+      <article v-for="(e, i) in events" :key="i" class="log-card" :class="'ev-' + e.severity">
+        <div class="row between">
+          <span class="ev-action" :class="'sev-' + e.severity" v-text="e.action"></span>
+          <span class="muted small" v-text="formatTs(e.ts)"></span>
+        </div>
+        <div class="log-meta">
+          <span class="role-pill" :class="rolePillClass(e.actor_role)" v-text="rolePillLabel(e.actor_role)"></span>
+          <span v-text="e.actor_username || '—'"></span>
+          <code v-text="e.category"></code>
+        </div>
+        <div v-if="e.tenant_name" class="muted small">tenant <code v-text="e.tenant_name"></code></div>
+        <div v-if="e.target_username" class="muted small">sobre <code v-text="e.target_username"></code></div>
+        <div v-if="e.details" class="muted small" v-text="e.details"></div>
+        <div v-if="e.ip" class="muted small">desde <span v-text="e.ip"></span></div>
+      </article>
+    </div>
+  </template>
 </div>
 
-<div class="mobile-only logs-cards">
-  {% for e in events %}
-  <article class="log-card ev-{{ e.severity }}">
-    <div class="row between">
-      <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
-      <span class="muted small">{{ e.ts|replace('T',' ')|replace('Z','') }}</span>
-    </div>
-    <div class="log-meta">
-      {% if e.actor_role == 'admin' %}<span class="role-pill role-admin">admin</span>
-      {% elif e.actor_role == 'user' %}<span class="role-pill role-user">user</span>
-      {% else %}<span class="role-pill role-system">sistema</span>
-      {% endif %}
-      <span>{{ e.actor_username or '—' }}</span>
-      <code>{{ e.category }}</code>
-    </div>
-    {% if e.tenant_name %}<div class="muted small">tenant <code>{{ e.tenant_name }}</code></div>{% endif %}
-    {% if e.target_username %}<div class="muted small">sobre <code>{{ e.target_username }}</code></div>{% endif %}
-    {% if e.details %}<div class="muted small">{{ e.details }}</div>{% endif %}
-    {% if e.ip %}<div class="muted small">desde {{ e.ip }}</div>{% endif %}
-  </article>
-  {% endfor %}
-</div>
-{% else %}
-<p class="muted">No hay eventos que coincidan con esos filtros.</p>
-{% endif %}
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('logs-app');
+  const REFRESH_MS = 10000;
+  const categories = JSON.parse(root.dataset.categories);
+  const initial = {
+    source: root.dataset.initialSource || '',
+    category: root.dataset.initialCategory || '',
+    q: root.dataset.initialQ || '',
+  };
+  const sourceOpts = [
+    { value: 'system', label: 'Sistema' },
+    { value: 'admin', label: 'Admin' },
+    { value: 'user', label: 'Clientes' },
+  ];
+
+  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const error = ref(false);
+      const events = ref([]);
+      const source = ref(initial.source);
+      const category = ref(initial.category);
+      const q = ref(initial.q);
+
+      let timer = null;
+      let inflight = null;
+
+      async function fetchData() {
+        if (document.hidden) return;
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        const params = new URLSearchParams();
+        if (source.value) params.set('source', source.value);
+        if (category.value) params.set('category', category.value);
+        if (q.value) params.set('q', q.value);
+        const url = '/api/logs' + (params.toString() ? '?' + params : '');
+        try {
+          const r = await fetch(url, { credentials: 'same-origin', signal: inflight.signal });
+          if (!r.ok) { error.value = true; return; }
+          const d = await r.json();
+          events.value = d.events;
+          error.value = false;
+          loading.value = false;
+        } catch (e) {
+          if (e.name !== 'AbortError') error.value = true;
+        } finally {
+          inflight = null;
+        }
+      }
+
+      function syncUrl() {
+        const url = new URL(window.location.href);
+        ['source', 'category', 'q'].forEach(k => url.searchParams.delete(k));
+        if (source.value) url.searchParams.set('source', source.value);
+        if (category.value) url.searchParams.set('category', category.value);
+        if (q.value) url.searchParams.set('q', q.value);
+        window.history.replaceState({}, '', url);
+      }
+
+      function apply() { loading.value = true; syncUrl(); fetchData(); }
+      function setSource(v) { source.value = v; apply(); }
+      function clearAll() { source.value = ''; category.value = ''; q.value = ''; apply(); }
+
+      function start() { stop(); fetchData(); timer = setInterval(fetchData, REFRESH_MS); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function onVis() { document.hidden ? stop() : start(); }
+
+      function formatTs(ts) { return (ts || '').replace('T', ' ').replace('Z', ''); }
+      function rolePillClass(role) {
+        if (role === 'admin') return 'role-admin';
+        if (role === 'user') return 'role-user';
+        return 'role-system';
+      }
+      function rolePillLabel(role) {
+        if (role === 'admin') return 'admin';
+        if (role === 'user') return 'user';
+        return 'sistema';
+      }
+
+      onMounted(() => {
+        start();
+        document.addEventListener('visibilitychange', onVis);
+      });
+      onBeforeUnmount(() => {
+        stop();
+        document.removeEventListener('visibilitychange', onVis);
+        if (inflight) inflight.abort();
+      });
+
+      return {
+        loading, error, events, source, category, q, categories, sourceOpts,
+        apply, setSource, clearAll, formatTs, rolePillClass, rolePillLabel,
+      };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#logs-app');
+});
+</script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block; min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%; animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px; color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .live-dot.stalled { background: #f59e0b !important; }
+</style>
 {% endblock %}

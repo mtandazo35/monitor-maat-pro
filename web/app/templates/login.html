@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_macros.html" import pwd_field %}
 {% block title %}Iniciar sesión · MonitorMaat{% endblock %}
 {% block content %}
 <div class="login-wrap">
@@ -123,21 +122,47 @@
       </div>
     </div>
 
-    <div class="login-card">
+    <div id="login-app" class="login-card" v-cloak>
       <h2>Iniciar sesión</h2>
       {% if flash %}
         <div class="flash flash-{{ flash.level }}" style="margin: 0 0 14px 0">{{ flash.msg }}</div>
       {% endif %}
       <form method="post" action="/login">
         <label>Usuario
-          <input name="username" autocomplete="username" required autofocus>
+          <input name="username" v-model.trim="username" autocomplete="username" required autofocus>
         </label>
         <label>Contraseña
-          {{ pwd_field('login-pwd', 'password', required=True) }}
+          <span class="pwd-wrap">
+            <input id="login-pwd" name="password" :type="showPwd ? 'text' : 'password'"
+                   v-model="password" required autocomplete="current-password">
+            <button type="button" class="pwd-toggle" :class="{ showing: showPwd }" @click="showPwd = !showPwd" tabindex="-1"
+                    :aria-label="showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+            </button>
+          </span>
         </label>
-        <button type="submit" class="primary login-btn">Entrar</button>
+        <button type="submit" class="primary login-btn" :disabled="!username || !password">Entrar</button>
       </form>
     </div>
+
+    <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+    <script defer>
+    window.addEventListener('DOMContentLoaded', () => {
+      const { createApp, ref } = Vue;
+      createApp({
+        setup() {
+          const username = ref('');
+          const password = ref('');
+          const showPwd = ref(false);
+          return { username, password, showPwd };
+        },
+        delimiters: ['[[', ']]'],
+      }).mount('#login-app');
+    });
+    </script>
+
+    <style>[v-cloak] { visibility: hidden; }</style>
   </section>
 </div>
 {% endblock %}

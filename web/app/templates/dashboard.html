@@ -1,139 +1,182 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · MonitorMaat{% endblock %}
 {% block content %}
-<div class="row between">
-  <h1>Dashboard</h1>
-  <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
+<link rel="preload" href="/api/stats" as="fetch" crossorigin="use-credentials">
+
+<div id="dashboard-app" data-role="{{ user.role }}" v-cloak>
+  <div class="row between">
+    <h1>Dashboard</h1>
+    <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
+  </div>
+
+  <h2 class="dash-section">Resumen <span class="live-dot" :class="{ stalled: error }" title="Actualiza cada 3s"></span></h2>
+  <div class="stat-cards">
+    <div v-if="role === 'admin'" class="stat-card sc-blue">
+      <div class="sc-icon">👥</div>
+      <div class="sc-body">
+        <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : stats.clientes"></div>
+        <div class="sc-label">Clientes</div>
+      </div>
+    </div>
+    <div class="stat-card sc-purple">
+      <div class="sc-icon">🗂</div>
+      <div class="sc-body">
+        <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : stats.tenants"></div>
+        <div class="sc-label">Tenants <span v-if="role !== 'admin'">propios</span></div>
+      </div>
+    </div>
+    <div class="stat-card sc-green">
+      <div class="sc-icon">✅</div>
+      <div class="sc-body">
+        <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : stats.running"></div>
+        <div class="sc-label">Servicios corriendo</div>
+        <div class="sc-meta">de <span :class="{ 'sk-inline': loading }" v-text="loading ? '' : stats.services_total"></span></div>
+      </div>
+    </div>
+    <div class="stat-card sc-red">
+      <div class="sc-icon">⏸</div>
+      <div class="sc-body">
+        <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : stats.stopped"></div>
+        <div class="sc-label">Servicios detenidos</div>
+      </div>
+    </div>
+  </div>
+
+  <template v-if="role === 'admin'">
+    <h2 class="dash-section">Recursos del servidor <span class="live-dot" :class="{ stalled: error }" title="Actualiza cada 3s"></span></h2>
+    <div class="stat-cards">
+      <div class="stat-card stat-card-meter sc-amber">
+        <div class="sc-icon">🧠</div>
+        <div class="sc-body">
+          <div class="sc-row">
+            <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : sys.ram.pct + '%'"></div>
+            <div class="sc-meta" :class="{ 'sk-inline': loading }" v-text="loading ? '' : sys.ram.used_h + ' / ' + sys.ram.total_h"></div>
+          </div>
+          <div class="sc-label">RAM</div>
+          <div class="meter">
+            <div class="meter-fill" :style="{ width: (loading ? 0 : sys.ram.pct) + '%' }"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-card stat-card-meter sc-teal">
+        <div class="sc-icon">⚡</div>
+        <div class="sc-body">
+          <div class="sc-row">
+            <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : sys.cpu.pct + '%'"></div>
+            <div class="sc-meta" :class="{ 'sk-inline': loading }" v-text="loading ? '' : sys.cpu.cores + ' cores'"></div>
+          </div>
+          <div class="sc-label">CPU</div>
+          <div class="meter">
+            <div class="meter-fill" :style="{ width: (loading ? 0 : sys.cpu.pct) + '%' }"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-card stat-card-meter sc-purple">
+        <div class="sc-icon">💾</div>
+        <div class="sc-body">
+          <div class="sc-row">
+            <div class="sc-value" :class="{ sk: loading }" v-text="loading ? '' : sys.disk.pct + '%'"></div>
+            <div class="sc-meta" :class="{ 'sk-inline': loading }" v-text="loading ? '' : sys.disk.used_h + ' / ' + sys.disk.total_h"></div>
+          </div>
+          <div class="sc-label">Disco</div>
+          <div class="meter">
+            <div class="meter-fill" :style="{ width: (loading ? 0 : sys.disk.pct) + '%' }"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
 </div>
 
-<h2 class="dash-section">Resumen <span class="live-dot" title="Actualiza cada 3s"></span></h2>
-<div class="stat-cards">
-  {% if stats.clientes is not none %}
-  <div class="stat-card sc-blue">
-    <div class="sc-icon">👥</div>
-    <div class="sc-body">
-      <div class="sc-value" data-stat="clientes">{{ stats.clientes }}</div>
-      <div class="sc-label">Clientes</div>
-    </div>
-  </div>
-  {% endif %}
-  <div class="stat-card sc-purple">
-    <div class="sc-icon">🗂</div>
-    <div class="sc-body">
-      <div class="sc-value" data-stat="tenants">{{ stats.tenants }}</div>
-      <div class="sc-label">Tenants {% if user.role != 'admin' %}propios{% endif %}</div>
-    </div>
-  </div>
-  <div class="stat-card sc-green">
-    <div class="sc-icon">✅</div>
-    <div class="sc-body">
-      <div class="sc-value" data-stat="running">{{ stats.running }}</div>
-      <div class="sc-label">Servicios corriendo</div>
-      <div class="sc-meta">de <span data-stat="services_total">{{ stats.services_total }}</span></div>
-    </div>
-  </div>
-  <div class="stat-card sc-red">
-    <div class="sc-icon">⏸</div>
-    <div class="sc-body">
-      <div class="sc-value" data-stat="stopped">{{ stats.stopped }}</div>
-      <div class="sc-label">Servicios detenidos</div>
-    </div>
-  </div>
-</div>
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('dashboard-app');
+  const role = root.dataset.role;
+  const REFRESH_MS = 3000;
 
-{% if sys %}
-<h2 class="dash-section">Recursos del servidor <span class="live-dot" title="Actualiza cada 3s"></span></h2>
-<div class="stat-cards">
-  <div class="stat-card stat-card-meter sc-amber">
-    <div class="sc-icon">🧠</div>
-    <div class="sc-body">
-      <div class="sc-row">
-        <div class="sc-value" data-sys="ram.pct">{{ sys.ram.pct }}%</div>
-        <div class="sc-meta" data-sys="ram.text">{{ sys.ram.used_h }} / {{ sys.ram.total_h }}</div>
-      </div>
-      <div class="sc-label">RAM</div>
-      <div class="meter">
-        <div class="meter-fill" data-sys="ram.bar" style="width: {{ sys.ram.pct }}%"></div>
-      </div>
-    </div>
-  </div>
+  const { createApp, ref, reactive, onMounted, onBeforeUnmount } = Vue;
 
-  <div class="stat-card stat-card-meter sc-teal">
-    <div class="sc-icon">⚡</div>
-    <div class="sc-body">
-      <div class="sc-row">
-        <div class="sc-value" data-sys="cpu.pct">{{ sys.cpu.pct }}%</div>
-        <div class="sc-meta">{{ sys.cpu.cores }} cores</div>
-      </div>
-      <div class="sc-label">CPU</div>
-      <div class="meter">
-        <div class="meter-fill" data-sys="cpu.bar" style="width: {{ sys.cpu.pct }}%"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="stat-card stat-card-meter sc-purple">
-    <div class="sc-icon">💾</div>
-    <div class="sc-body">
-      <div class="sc-row">
-        <div class="sc-value" data-sys="disk.pct">{{ sys.disk.pct }}%</div>
-        <div class="sc-meta" data-sys="disk.text">{{ sys.disk.used_h }} / {{ sys.disk.total_h }}</div>
-      </div>
-      <div class="sc-label">Disco</div>
-      <div class="meter">
-        <div class="meter-fill" data-sys="disk.bar" style="width: {{ sys.disk.pct }}%"></div>
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-<script>
-(function(){
-  let alive = true;
-  document.addEventListener('visibilitychange', () => {
-    alive = !document.hidden;
-  });
-
-  function setText(sel, text) {
-    document.querySelectorAll(sel).forEach(el => el.textContent = text);
-  }
-  function setStyle(sel, prop, val) {
-    document.querySelectorAll(sel).forEach(el => el.style[prop] = val);
-  }
-
-  async function tick() {
-    if (!alive) return;
-    try {
-      const r = await fetch('/api/stats', { credentials: 'same-origin' });
-      if (!r.ok) return;
-      const d = await r.json();
-
-      // Resumen
-      const s = d.stats;
-      document.querySelectorAll('[data-stat]').forEach(el => {
-        const key = el.dataset.stat;
-        if (s[key] !== null && s[key] !== undefined) el.textContent = s[key];
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const error = ref(false);
+      const stats = reactive({ clientes: 0, tenants: 0, services_total: 0, running: 0, stopped: 0 });
+      const sys = reactive({
+        ram: { pct: 0, used_h: '', total_h: '' },
+        cpu: { pct: 0, cores: 0 },
+        disk: { pct: 0, used_h: '', total_h: '' },
       });
 
-      // Sistema (solo admin — el endpoint omite `sys` para non-admin)
-      const sys = d.sys;
-      if (sys) {
-        setText('[data-sys="ram.pct"]', sys.ram.pct + '%');
-        setText('[data-sys="ram.text"]', sys.ram.used_h + ' / ' + sys.ram.total_h);
-        setStyle('[data-sys="ram.bar"]', 'width', sys.ram.pct + '%');
+      let timer = null;
+      let inflight = null;
 
-        setText('[data-sys="cpu.pct"]', sys.cpu.pct + '%');
-        setStyle('[data-sys="cpu.bar"]', 'width', sys.cpu.pct + '%');
-
-        setText('[data-sys="disk.pct"]', sys.disk.pct + '%');
-        setText('[data-sys="disk.text"]', sys.disk.used_h + ' / ' + sys.disk.total_h);
-        setStyle('[data-sys="disk.bar"]', 'width', sys.disk.pct + '%');
+      async function tick() {
+        if (document.hidden) return;
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        try {
+          const r = await fetch('/api/stats', { credentials: 'same-origin', signal: inflight.signal });
+          if (!r.ok) { error.value = true; return; }
+          const d = await r.json();
+          Object.assign(stats, d.stats);
+          if (d.sys) {
+            Object.assign(sys.ram, d.sys.ram);
+            Object.assign(sys.cpu, d.sys.cpu);
+            Object.assign(sys.disk, d.sys.disk);
+          }
+          error.value = false;
+          loading.value = false;
+        } catch (e) {
+          if (e.name !== 'AbortError') error.value = true;
+        } finally {
+          inflight = null;
+        }
       }
-    } catch(e) {}
-  }
 
-  setInterval(tick, 3000);
-})();
+      function start() { stop(); tick(); timer = setInterval(tick, REFRESH_MS); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function onVis() { document.hidden ? stop() : start(); }
+
+      onMounted(() => {
+        start();
+        document.addEventListener('visibilitychange', onVis);
+      });
+      onBeforeUnmount(() => {
+        stop();
+        document.removeEventListener('visibilitychange', onVis);
+        if (inflight) inflight.abort();
+      });
+
+      return { loading, error, role, stats, sys };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#dashboard-app');
+});
 </script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sc-value.sk, .sk-inline {
+    display: inline-block;
+    min-width: 2.4em;
+    min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px;
+    color: transparent;
+  }
+  html.theme-light .sc-value.sk, html.theme-light .sk-inline {
+    --sk-base: rgba(0,0,0,0.06);
+    --sk-hi: rgba(0,0,0,0.12);
+  }
+  @keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .live-dot.stalled { background: #f59e0b !important; }
+</style>
 {% endblock %}

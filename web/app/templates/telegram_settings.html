@@ -5,7 +5,10 @@
   <h1>Configuración de Telegram</h1>
 </div>
 
-<section class="card">
+<section id="tg-app" class="card"
+         data-token-set="{{ '1' if cfg.token_set else '0' }}"
+         data-admin-chat-id="{{ cfg.admin_chat_id or '' }}"
+         v-cloak>
   <h2>Bot</h2>
   <p class="muted">
     Te permite enviar notificaciones automáticas (creación de usuarios, eventos de tenants, fallos) a un chat de admin
@@ -27,13 +30,18 @@
 
   <form method="post" action="/settings/telegram">
     <label>Bot token
-      <input name="bot_token" type="password" autocomplete="off"
-             placeholder="{{ '••••••••• (cargado — dejá vacío para mantener)' if cfg.token_set else '123456789:AAH...' }}">
+      <span class="pwd-wrap">
+        <input id="tg-bot-token" name="bot_token" :type="showToken ? 'text' : 'password'" autocomplete="off"
+               :placeholder="tokenSet ? '••••••••• (cargado — dejá vacío para mantener)' : '123456789:AAH...'">
+        <button type="button" class="pwd-toggle" :class="{ showing: showToken }" @click="showToken = !showToken" tabindex="-1">
+          <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+        </button>
+      </span>
     </label>
 
     <label>Chat ID del admin (recibe todas las notificaciones administrativas)
-      <input name="admin_chat_id" value="{{ cfg.admin_chat_id or '' }}"
-             placeholder="123456789">
+      <input name="admin_chat_id" v-model="adminChatId" placeholder="123456789">
     </label>
 
     <div class="row">
@@ -53,4 +61,25 @@
     <button type="submit" class="btn">Enviar test</button>
   </form>
 </section>
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('tg-app');
+  const tokenSet = root.dataset.tokenSet === '1';
+  const initialChat = root.dataset.adminChatId || '';
+
+  const { createApp, ref } = Vue;
+  createApp({
+    setup() {
+      const adminChatId = ref(initialChat);
+      const showToken = ref(false);
+      return { adminChatId, showToken, tokenSet };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#tg-app');
+});
+</script>
+
+<style>[v-cloak] { visibility: hidden; }</style>
 {% endblock %}

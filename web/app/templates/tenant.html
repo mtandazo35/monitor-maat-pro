@@ -1,224 +1,298 @@
 {% extends "base.html" %}
-{% block title %}{{ tenant.name }} · MonitorMaat Admin{% endblock %}
+{% block title %}{{ tenant_name }} · MonitorMaat Admin{% endblock %}
 {% block content %}
-<div class="row between">
-  <h1>{{ tenant.name }}</h1>
-  <a href="/" class="btn">← Tenants</a>
-</div>
+<link rel="preload" href="/api/tenants/{{ tenant_name }}" as="fetch" crossorigin="use-credentials">
 
-<section class="card">
-  <h2>Resumen</h2>
-  <dl class="grid">
-    {% if user.role == 'admin' %}
-    <dt>Empresa</dt>
-    <dd>
-      {{ tenant.owner_company or '—' }}
-      {% if tenant.owner_username %}<span class="muted">({{ tenant.owner_username }})</span>{% endif %}
-    </dd>
-    {% endif %}
-    <dt>Slot</dt><dd>{{ tenant.slot }}</dd>
-    <dt>IP pública</dt><dd><code>{{ tenant.public_ip }}</code></dd>
-    <dt>OpenVPN</dt>
-    <dd>
-      <code>{{ tenant.public_ip }}:{{ tenant.vpn_port }}/tcp</code>
-      <span class="status status-{{ tenant.ovpn_status }}">{{ tenant.ovpn_status }}</span>
-    </dd>
-    <dt>Kuma</dt>
-    <dd>
-      <a href="http://{{ tenant.public_ip }}:{{ tenant.kuma_port }}" target="_blank" rel="noopener">
-        http://{{ tenant.public_ip }}:{{ tenant.kuma_port }} ↗
-      </a>
-      <span class="status status-{{ tenant.kuma_status }}">{{ tenant.kuma_status }}</span>
-    </dd>
-    <dt>Subred VPN</dt><dd><code>{{ tenant.vpn_subnet }}/24</code></dd>
-    <dt>Red Docker</dt><dd><code>{{ tenant.docker_subnet }}</code></dd>
-  </dl>
-
-  <div class="row">
-    <form method="post" action="/tenants/{{ tenant.name }}/start" class="inline">
-      <button class="btn">Iniciar</button>
-    </form>
-    <form method="post" action="/tenants/{{ tenant.name }}/restart" class="inline">
-      <button class="btn">Reiniciar</button>
-    </form>
-    <form method="post" action="/tenants/{{ tenant.name }}/stop" class="inline">
-      <button class="btn warn">Detener</button>
-    </form>
-  </div>
-</section>
-
-<section class="card">
+<div id="tenant-app"
+     data-name="{{ tenant_name }}"
+     data-role="{{ user.role }}"
+     v-cloak>
   <div class="row between">
-    <h2>Usuarios VPN</h2>
-    <form method="post" action="/tenants/{{ tenant.name }}/users/new" class="inline">
-      <button class="btn primary">+ Nuevo usuario VPN</button>
-    </form>
+    <h1 v-text="tenant ? tenant.name : tenantName"></h1>
+    <a href="/tenants" class="btn">← Tenants</a>
   </div>
 
-  {% if users %}
-  <div class="desktop-only tbl-wrap">
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th>Usuario</th>
-        <th>Clave</th>
-        <th>IP VPN</th>
-        <th>Redes cliente</th>
-        <th>Mikrotik</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-    {% for u in users %}
-      <tr>
-        <td><code>{{ u.username }}</code></td>
-        <td><code>{{ u.password }}</code></td>
-        <td><code>{{ u.ip }}</code></td>
-        <td>
-          {% if u.networks %}
-            <ul class="nets">
-            {% for n in u.networks %}
-              <li>
-                <code>{{ n.cidr }}</code>
-                <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/{{ n.id }}/delete"
-                      class="inline" onsubmit="return confirm('¿Eliminar red {{ n.cidr }}?');">
-                  <button type="submit" class="btn-x" title="Eliminar red">×</button>
+  <section class="card">
+    <h2>Resumen</h2>
+    <dl class="grid" v-if="loading">
+      <dt v-if="role === 'admin'">Empresa</dt><dd v-if="role === 'admin'"><span class="sk-inline" style="min-width:8em"></span></dd>
+      <dt>Slot</dt><dd><span class="sk-inline" style="min-width:2em"></span></dd>
+      <dt>IP pública</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
+      <dt>OpenVPN</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
+      <dt>Kuma</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
+      <dt>Subred VPN</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
+      <dt>Red Docker</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
+    </dl>
+    <dl class="grid" v-else-if="tenant">
+      <template v-if="role === 'admin'">
+        <dt>Empresa</dt>
+        <dd>
+          <span v-text="tenant.owner_company || '—'"></span>
+          <span v-if="tenant.owner_username" class="muted">(<span v-text="tenant.owner_username"></span>)</span>
+        </dd>
+      </template>
+      <dt>Slot</dt><dd v-text="tenant.slot"></dd>
+      <dt>IP pública</dt><dd><code v-text="tenant.public_ip"></code></dd>
+      <dt>OpenVPN</dt>
+      <dd>
+        <code v-text="tenant.public_ip + ':' + tenant.vpn_port + '/tcp'"></code>
+        <span class="status" :class="'status-' + tenant.ovpn_status" v-text="tenant.ovpn_status"></span>
+      </dd>
+      <dt>Kuma</dt>
+      <dd>
+        <a :href="'http://' + tenant.public_ip + ':' + tenant.kuma_port" target="_blank" rel="noopener"
+           v-text="'http://' + tenant.public_ip + ':' + tenant.kuma_port + ' ↗'"></a>
+        <span class="status" :class="'status-' + tenant.kuma_status" v-text="tenant.kuma_status"></span>
+      </dd>
+      <dt>Subred VPN</dt><dd><code v-text="tenant.vpn_subnet + '/24'"></code></dd>
+      <dt>Red Docker</dt><dd><code v-text="tenant.docker_subnet"></code></dd>
+    </dl>
+
+    <div class="row">
+      <form :action="'/tenants/' + tenantName + '/start'" method="post" class="inline">
+        <button class="btn">Iniciar</button>
+      </form>
+      <form :action="'/tenants/' + tenantName + '/restart'" method="post" class="inline">
+        <button class="btn">Reiniciar</button>
+      </form>
+      <form :action="'/tenants/' + tenantName + '/stop'" method="post" class="inline">
+        <button class="btn warn">Detener</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row between">
+      <h2>Usuarios VPN</h2>
+      <form :action="'/tenants/' + tenantName + '/users/new'" method="post" class="inline">
+        <button class="btn primary">+ Nuevo usuario VPN</button>
+      </form>
+    </div>
+
+    <div v-if="loading" class="tbl-wrap desktop-only">
+      <table class="tbl">
+        <thead>
+          <tr><th>Usuario</th><th>Clave</th><th>IP VPN</th><th>Redes cliente</th><th>Mikrotik</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="n in 2" :key="n">
+            <td v-for="c in 6" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <template v-if="!loading && users.length > 0">
+      <div class="desktop-only tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Usuario</th><th>Clave</th><th>IP VPN</th>
+              <th>Redes cliente</th><th>Mikrotik</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in users" :key="u.id">
+              <td><code v-text="u.username"></code></td>
+              <td><code v-text="u.password"></code></td>
+              <td><code v-text="u.ip"></code></td>
+              <td>
+                <ul v-if="u.networks && u.networks.length" class="nets">
+                  <li v-for="n in u.networks" :key="n.id">
+                    <code v-text="n.cidr"></code>
+                    <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/' + n.id + '/delete'"
+                          method="post" class="inline"
+                          @submit="confirmNet($event, n.cidr)">
+                      <button type="submit" class="btn-x" title="Eliminar red">×</button>
+                    </form>
+                  </li>
+                </ul>
+                <span v-else class="muted">—</span>
+                <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'" method="post" class="inline-form">
+                  <input name="cidr" placeholder="192.168.1.0/24" required>
+                  <button class="btn small">+ Red</button>
                 </form>
-              </li>
-            {% endfor %}
-            </ul>
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
-          <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/new" class="inline-form">
+              </td>
+              <td class="mk-cell">
+                <details v-for="(snippet, key) in u.mikrotik" :key="key" class="mk-ver">
+                  <summary v-text="key === 'v6' ? 'RouterOS v6' : 'RouterOS v7+'"></summary>
+                  <pre class="mk" v-text="snippet"></pre>
+                  <button type="button" class="btn small" @click="copy($event, snippet)">Copiar</button>
+                </details>
+              </td>
+              <td>
+                <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/delete'"
+                      method="post" class="inline" @submit="confirmUser($event, u.username)">
+                  <button class="btn small warn">Borrar</button>
+                </form>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mobile-only user-cards">
+        <article v-for="u in users" :key="u.id" class="user-card">
+          <div class="user-card-head">
+            <code class="user-name" v-text="u.username"></code>
+            <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/delete'"
+                  method="post" class="inline" @submit="confirmUser($event, u.username)">
+              <button class="btn small warn">Borrar</button>
+            </form>
+          </div>
+          <dl class="user-card-grid">
+            <dt>Clave</dt><dd><code v-text="u.password"></code></dd>
+            <dt>IP VPN</dt><dd><code v-text="u.ip"></code></dd>
+            <dt>Redes</dt>
+            <dd>
+              <ul v-if="u.networks && u.networks.length" class="nets">
+                <li v-for="n in u.networks" :key="n.id">
+                  <code v-text="n.cidr"></code>
+                  <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/' + n.id + '/delete'"
+                        method="post" class="inline" @submit="confirmNet($event, n.cidr)">
+                    <button type="submit" class="btn-x" title="Eliminar red">×</button>
+                  </form>
+                </li>
+              </ul>
+              <span v-else class="muted">—</span>
+            </dd>
+          </dl>
+          <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'" method="post" class="inline-form">
             <input name="cidr" placeholder="192.168.1.0/24" required>
             <button class="btn small">+ Red</button>
           </form>
-        </td>
-        <td class="mk-cell">
-          {% for label, key in [('RouterOS v6','v6'),('RouterOS v7+','v7')] %}
-          <details class="mk-ver">
-            <summary>{{ label }}</summary>
-            <pre class="mk" id="mk-d-{{ u.id }}-{{ key }}">{{ u.mikrotik[key] }}</pre>
-            <button type="button" class="btn small" onclick="kumaCopy('mk-d-{{ u.id }}-{{ key }}', this)">Copiar</button>
+          <details class="mk-details">
+            <summary>Snippet Mikrotik</summary>
+            <div v-for="(snippet, key) in u.mikrotik" :key="key" class="mk-ver">
+              <div class="mk-ver-label" v-text="key === 'v6' ? 'RouterOS v6' : 'RouterOS v7+'"></div>
+              <pre class="mk" v-text="snippet"></pre>
+              <button type="button" class="btn small" @click="copy($event, snippet)">Copiar</button>
+            </div>
           </details>
-          {% endfor %}
-        </td>
-        <td>
-          <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/delete"
-                onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');" class="inline">
-            <button class="btn small warn">Borrar</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-
-  <div class="mobile-only user-cards">
-    {% for u in users %}
-    <article class="user-card">
-      <div class="user-card-head">
-        <code class="user-name">{{ u.username }}</code>
-        <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/delete"
-              onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');" class="inline">
-          <button class="btn small warn">Borrar</button>
-        </form>
+        </article>
       </div>
-      <dl class="user-card-grid">
-        <dt>Clave</dt><dd><code>{{ u.password }}</code></dd>
-        <dt>IP VPN</dt><dd><code>{{ u.ip }}</code></dd>
-        <dt>Redes</dt>
-        <dd>
-          {% if u.networks %}
-            <ul class="nets">
-            {% for n in u.networks %}
-              <li>
-                <code>{{ n.cidr }}</code>
-                <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/{{ n.id }}/delete"
-                      class="inline" onsubmit="return confirm('¿Eliminar red {{ n.cidr }}?');">
-                  <button type="submit" class="btn-x" title="Eliminar red">×</button>
-                </form>
-              </li>
-            {% endfor %}
-            </ul>
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
-        </dd>
-      </dl>
-      <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/new" class="inline-form">
-        <input name="cidr" placeholder="192.168.1.0/24" required>
-        <button class="btn small">+ Red</button>
-      </form>
-      <details class="mk-details">
-        <summary>Snippet Mikrotik</summary>
-        {% for label, key in [('RouterOS v6','v6'),('RouterOS v7+','v7')] %}
-        <div class="mk-ver">
-          <div class="mk-ver-label">{{ label }}</div>
-          <pre class="mk" id="mk-m-{{ u.id }}-{{ key }}">{{ u.mikrotik[key] }}</pre>
-          <button type="button" class="btn small" onclick="kumaCopy('mk-m-{{ u.id }}-{{ key }}', this)">Copiar</button>
-        </div>
-        {% endfor %}
-      </details>
-    </article>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="muted">No hay usuarios VPN todavía.</p>
-  {% endif %}
-</section>
+    </template>
 
-<script>
-function kumaCopy(id, btn) {
-  const text = document.getElementById(id).textContent;
-  const orig = btn.dataset.orig || btn.textContent;
-  btn.dataset.orig = orig;
+    <p v-if="!loading && users.length === 0" class="muted">No hay usuarios VPN todavía.</p>
+  </section>
 
-  function ok() {
-    btn.textContent = '✓ Copiado';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
-  }
-  function fail() {
-    btn.textContent = 'Error';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }
-  function fallback() {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    ta.setSelectionRange(0, text.length);
-    let success = false;
-    try { success = document.execCommand('copy'); } catch (e) { success = false; }
-    document.body.removeChild(ta);
-    success ? ok() : fail();
-  }
+  <section class="card danger">
+    <h2>Zona peligrosa</h2>
+    <p>Eliminar el tenant detiene los contenedores, borra la config de OpenVPN y el historial de Kuma.</p>
+    <form :action="'/tenants/' + tenantName + '/delete'" method="post" @submit="confirmDelete">
+      <label>Escribí <code v-text="tenantName"></code> para confirmar
+        <input name="confirm" autocomplete="off" required>
+      </label>
+      <button class="btn warn">Eliminar tenant</button>
+    </form>
+  </section>
+</div>
 
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(ok).catch(fallback);
-  } else {
-    fallback();
-  }
-}
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('tenant-app');
+  const tenantName = root.dataset.name;
+  const role = root.dataset.role;
+  const REFRESH_MS = 5000;
+
+  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const error = ref(false);
+      const tenant = ref(null);
+      const users = ref([]);
+
+      let timer = null;
+      let inflight = null;
+
+      async function fetchData() {
+        if (document.hidden) return;
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        try {
+          const r = await fetch('/api/tenants/' + encodeURIComponent(tenantName), {
+            credentials: 'same-origin', signal: inflight.signal,
+          });
+          if (!r.ok) { error.value = true; return; }
+          const d = await r.json();
+          tenant.value = d.tenant;
+          users.value = d.users;
+          error.value = false;
+          loading.value = false;
+        } catch (e) {
+          if (e.name !== 'AbortError') error.value = true;
+        } finally {
+          inflight = null;
+        }
+      }
+
+      function start() { stop(); fetchData(); timer = setInterval(fetchData, REFRESH_MS); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function onVis() { document.hidden ? stop() : start(); }
+
+      function confirmUser(ev, username) {
+        if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
+      }
+      function confirmNet(ev, cidr) {
+        if (!confirm('¿Eliminar red ' + cidr + '?')) ev.preventDefault();
+      }
+      function confirmDelete(ev) {
+        if (!confirm('Esto es irreversible. ¿Seguro?')) ev.preventDefault();
+      }
+
+      async function copy(ev, text) {
+        const btn = ev.target;
+        const orig = btn.dataset.orig || btn.textContent;
+        btn.dataset.orig = orig;
+        const ok = () => { btn.textContent = '✓ Copiado'; setTimeout(() => btn.textContent = orig, 1500); };
+        const fail = () => { btn.textContent = 'Error'; setTimeout(() => btn.textContent = orig, 2000); };
+        if (navigator.clipboard && window.isSecureContext) {
+          try { await navigator.clipboard.writeText(text); ok(); return; } catch (e) {}
+        }
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        let success = false;
+        try { success = document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        success ? ok() : fail();
+      }
+
+      onMounted(() => {
+        start();
+        document.addEventListener('visibilitychange', onVis);
+      });
+      onBeforeUnmount(() => {
+        stop();
+        document.removeEventListener('visibilitychange', onVis);
+        if (inflight) inflight.abort();
+      });
+
+      return { loading, error, role, tenantName, tenant, users, confirmUser, confirmNet, confirmDelete, copy };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#tenant-app');
+});
 </script>
 
-<section class="card danger">
-  <h2>Zona peligrosa</h2>
-  <p>Eliminar el tenant detiene los contenedores, borra la config de OpenVPN y el historial de Kuma.</p>
-  <form method="post" action="/tenants/{{ tenant.name }}/delete"
-        onsubmit="return confirm('Esto es irreversible. ¿Seguro?');">
-    <label>Escribí <code>{{ tenant.name }}</code> para confirmar
-      <input name="confirm" autocomplete="off" required>
-    </label>
-    <button class="btn warn">Eliminar tenant</button>
-  </form>
-</section>
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block;
+    min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px;
+    color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+</style>
 {% endblock %}

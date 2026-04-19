@@ -243,15 +243,11 @@ def _compute_dashboard_stats(user: dict) -> tuple[list[dict], dict]:
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, user: dict = Depends(current_user)):
-    _, stats = _compute_dashboard_stats(user)
-    sys_info = system_stats.host_stats() if user["role"] == "admin" else None
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
             "user": user,
-            "stats": stats,
-            "sys": sys_info,
             "flash": _pop_flash(request),
         },
     )
@@ -259,16 +255,28 @@ def dashboard(request: Request, user: dict = Depends(current_user)):
 
 @app.get("/api/stats")
 def api_stats(user: dict = Depends(current_user)):
-    """Devuelve stats del sistema (solo admin) y servicios — usado por dashboard para polling."""
     _, stats = _compute_dashboard_stats(user)
     payload: dict = {"stats": stats}
     if user["role"] == "admin":
         payload["sys"] = system_stats.host_stats()
-    return JSONResponse(payload)
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/tenants", response_class=HTMLResponse)
 def tenants_list(request: Request, q: str = "", user: dict = Depends(current_user)):
+    return templates.TemplateResponse(
+        "tenants.html",
+        {
+            "request": request,
+            "user": user,
+            "q": q,
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.get("/api/tenants")
+def api_tenants(q: str = "", user: dict = Depends(current_user)):
     if user["role"] == "admin":
         tenants = svc.list_tenants(search=q or None)
     else:
@@ -285,16 +293,9 @@ def tenants_list(request: Request, q: str = "", user: dict = Depends(current_use
             "used": usr.count_user_tenants(user["id"]),
             "total": user.get("tenant_quota") or 0,
         }
-    return templates.TemplateResponse(
-        "tenants.html",
-        {
-            "request": request,
-            "tenants": tenants,
-            "user": user,
-            "quota": quota_info,
-            "q": q,
-            "flash": _pop_flash(request),
-        },
+    return JSONResponse(
+        {"tenants": tenants, "quota": quota_info, "q": q},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -350,21 +351,32 @@ def tenant_detail(request: Request, name: str, user: dict = Depends(current_user
     if not tenant:
         raise HTTPException(404)
     _require_tenant_access(user, tenant)
+    return templates.TemplateResponse(
+        "tenant.html",
+        {
+            "request": request,
+            "tenant_name": tenant["name"],
+            "user": user,
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.get("/api/tenants/{name}")
+def api_tenant_detail(name: str, user: dict = Depends(current_user)):
+    tenant = svc.get_tenant(name)
+    if not tenant:
+        raise HTTPException(404)
+    _require_tenant_access(user, tenant)
     users_list = svc.list_vpn_users(tenant["id"])
     for u in users_list:
         u["networks"] = svc.list_networks(u["id"])
         u["mikrotik"] = svc.mikrotik_snippet(tenant, u)
     tenant["ovpn_status"] = svc.container_status(f"openvpn-{tenant['name']}")
     tenant["kuma_status"] = svc.container_status(f"kuma-{tenant['name']}")
-    return templates.TemplateResponse(
-        "tenant.html",
-        {
-            "request": request,
-            "tenant": tenant,
-            "users": users_list,
-            "user": user,
-            "flash": _pop_flash(request),
-        },
+    return JSONResponse(
+        {"tenant": tenant, "users": users_list},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -532,6 +544,13 @@ def delete_tenant(
 
 # -------- USUARIOS (ADMIN ONLY) --------
 
+_USER_PUBLIC_FIELDS = (
+    "id", "username", "first_name", "last_name", "company_name",
+    "email", "phone", "role", "tenant_count", "tenant_quota",
+    "created_at", "must_change_password",
+)
+
+
 @app.get("/users", response_class=HTMLResponse)
 def users_list(request: Request, q: str = "", user: dict = Depends(current_admin)):
     return templates.TemplateResponse(
@@ -539,11 +558,17 @@ def users_list(request: Request, q: str = "", user: dict = Depends(current_admin
         {
             "request": request,
             "user": user,
-            "users": usr.list_users(search=q or None),
             "q": q,
             "flash": _pop_flash(request),
         },
     )
+
+
+@app.get("/api/users")
+def api_users(q: str = "", user: dict = Depends(current_admin)):
+    rows = usr.list_users(search=q or None)
+    safe = [{k: r.get(k) for k in _USER_PUBLIC_FIELDS} for r in rows]
+    return JSONResponse({"users": safe, "q": q}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/users/new", response_class=HTMLResponse)
@@ -950,7 +975,25 @@ def me_telegram_test(request: Request, user: dict = Depends(current_user)):
 @app.get("/logs", response_class=HTMLResponse)
 def logs_admin(
     request: Request,
-    source: str = "",       # 'admin' | 'user' | 'system' | ''
+    source: str = "",
+    category: str = "",
+    q: str = "",
+    user: dict = Depends(current_admin),
+):
+    return templates.TemplateResponse(
+        "logs.html",
+        {
+            "request": request, "user": user,
+            "filters": {"source": source, "category": category, "q": q},
+            "categories": list(events.CATEGORIES),
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.get("/api/logs")
+def api_logs(
+    source: str = "",
     category: str = "",
     q: str = "",
     user: dict = Depends(current_admin),
@@ -961,24 +1004,24 @@ def logs_admin(
         search=q or None,
         limit=300,
     )
-    return templates.TemplateResponse(
-        "logs.html",
-        {
-            "request": request, "user": user, "events": rows,
-            "filters": {"source": source, "category": category, "q": q},
-            "categories": events.CATEGORIES,
-            "flash": _pop_flash(request),
-        },
+    return JSONResponse(
+        {"events": rows, "filters": {"source": source, "category": category, "q": q}},
+        headers={"Cache-Control": "no-store"},
     )
 
 
 @app.get("/me/logs", response_class=HTMLResponse)
 def logs_me(request: Request, user: dict = Depends(current_user)):
-    rows = events.list_events_for_user(user["id"], limit=300)
     return templates.TemplateResponse(
         "me_logs.html",
         {
-            "request": request, "user": user, "events": rows,
+            "request": request, "user": user,
             "flash": _pop_flash(request),
         },
     )
+
+
+@app.get("/api/me/logs")
+def api_logs_me(user: dict = Depends(current_user)):
+    rows = events.list_events_for_user(user["id"], limit=300)
+    return JSONResponse({"events": rows}, headers={"Cache-Control": "no-store"})
