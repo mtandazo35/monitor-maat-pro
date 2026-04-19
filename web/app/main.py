@@ -13,6 +13,7 @@ import auth
 import db
 import tenant_service as svc
 import user_service as usr
+import billing_service as billing
 import email_service as mail
 import settings_service as settings
 import notify_service as notify
@@ -49,7 +50,7 @@ def _payment_reminder_loop() -> None:
     Telegram + email. Idempotente vía payment_warning_sent_for."""
     while True:
         try:
-            usr.send_payment_reminders(notify, mail)
+            billing.send_payment_reminders(notify, mail)
         except Exception as e:
             print(f"[payment-reminder] error: {e}")
         time.sleep(3600)
@@ -127,7 +128,7 @@ def current_user(request: Request) -> dict:
     if not user:
         raise AuthRequired()
     # Bloqueo por impago: corta la sesión y redirige a login con mensaje.
-    if not usr.is_paid(user):
+    if not billing.is_paid(user):
         raise PaymentRequired()
     # Si tiene flag, redirigir a /change-password (excepto si ya está en esa ruta o haciendo logout)
     path = request.url.path
@@ -167,7 +168,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     ip = _client_ip(request)
     user = auth.authenticate(username.strip(), password)
     if user:
-        if not usr.is_paid(user):
+        if not billing.is_paid(user):
             events.log(
                 "login_blocked_unpaid", "auth",
                 actor=user, severity="warn",
@@ -207,9 +208,14 @@ def logout(request: Request):
 
 @app.get("/change-password", response_class=HTMLResponse)
 def change_password_form(request: Request, user: dict = Depends(current_user)):
+    plan = billing.plan_summary(user) if user["role"] != "admin" else None
     return templates.TemplateResponse(
         "change_password.html",
-        {"request": request, "user": user, "flash": _pop_flash(request)},
+        {
+            "request": request, "user": user,
+            "plan": plan,
+            "flash": _pop_flash(request),
+        },
     )
 
 
@@ -300,8 +306,8 @@ def api_stats(user: dict = Depends(current_user)):
         "stats": stats,
         "me": {
             "paid_until": user.get("paid_until"),
-            "days_until_due": usr.days_until_due(user),
-            "is_paid": usr.is_paid(user),
+            "days_until_due": billing.days_until_due(user),
+            "is_paid": billing.is_paid(user),
         },
     }
     if user["role"] == "admin":
@@ -600,8 +606,8 @@ _USER_PUBLIC_FIELDS = (
 
 def _user_public(u: dict) -> dict:
     out = {k: u.get(k) for k in _USER_PUBLIC_FIELDS}
-    out["days_until_due"] = usr.days_until_due(u)
-    out["is_paid"] = usr.is_paid(u)
+    out["days_until_due"] = billing.days_until_due(u)
+    out["is_paid"] = billing.is_paid(u)
     return out
 
 
@@ -632,7 +638,7 @@ def api_user_detail(user_id: int, user: dict = Depends(current_admin)):
         raise HTTPException(404)
     target["tenant_count"] = usr.count_user_tenants(user_id)
     return JSONResponse(
-        {"user": _user_public(target), "payments": usr.list_payments(user_id)},
+        {"user": _user_public(target), "payments": billing.list_payments(user_id)},
         headers={"Cache-Control": "no-store"},
     )
 
@@ -658,7 +664,7 @@ def user_register_payment(
         _flash(request, "Monto o días inválidos.", "error")
         return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
     try:
-        payment = usr.register_payment(
+        payment = billing.register_payment(
             user_id, amount=amount_f, days=days_i,
             currency=currency, method=method, notes=notes,
             registered_by=user,
@@ -714,7 +720,7 @@ def user_quick_extend(
         _flash(request, "Días inválidos.", "error")
         return RedirectResponse("/users", status_code=303)
     try:
-        payment = usr.register_payment(
+        payment = billing.register_payment(
             user_id, amount=0.0, days=days_i,
             method="cortesía", notes="Extensión sin pago",
             registered_by=user,
