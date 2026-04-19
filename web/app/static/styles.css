@@ -1127,7 +1127,7 @@ body.bg-client::before {
   }
   .login-form {
     order: 1;
-    padding: 24px 16px;
+    padding: 18px 14px;
     min-height: auto;
   }
   .login-hero {
@@ -1135,11 +1135,22 @@ body.bg-client::before {
     padding: 24px 20px 32px;
     min-height: auto;
   }
+  /* Card full-width sin overflow: max-width nunca puede pasar el viewport */
   .login-card {
-    margin: 0 auto;
-    padding: 24px 20px;
+    max-width: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 22px 18px;
+    box-sizing: border-box;
   }
   .login-card h2 { margin-bottom: 14px; font-size: 1.4rem; }
+  /* Labels visibles: forzamos color claro porque el card es dark */
+  .login-card label {
+    color: #e6e8ee;
+    font-weight: 500;
+    font-size: .92rem;
+    margin-bottom: 12px;
+  }
   /* Hero compacto: solo logo + título + lead. Features ocultas en mobile. */
   .hero-title { font-size: 1.6rem; margin: 8px 0 4px; }
   .login-hero .lead { font-size: .88rem; margin: 0 0 14px; }
