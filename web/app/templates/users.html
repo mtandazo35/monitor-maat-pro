@@ -118,6 +118,10 @@
 window.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('users-app');
   const initialQ = root.dataset.initialQ || '';
+  const TZ = 'America/Guayaquil';
+  const dateFmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
 
   const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
 
@@ -163,8 +167,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!ts) return '—';
         const d = new Date(ts);
         if (isNaN(d.getTime())) return ts.slice(0, 10);
-        const p = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+        return dateFmt.format(d);
       }
       function confirmDelete(ev, username) {
         if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();

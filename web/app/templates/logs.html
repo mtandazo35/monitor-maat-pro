@@ -58,7 +58,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(e, i) in events" :key="i" :class="'ev-' + e.severity">
+          <tr v-for="(e, i) in events" :key="i" :class="['ev-' + e.severity, { 'ev-new': isNew(e) }]">
             <td class="muted small ts" v-text="formatTs(e.ts)"></td>
             <td>
               <span class="role-pill" :class="rolePillClass(e.actor_role)" v-text="rolePillLabel(e.actor_role)"></span>
@@ -82,7 +82,7 @@
     </div>
 
     <div class="mobile-only logs-cards">
-      <article v-for="(e, i) in events" :key="i" class="log-card" :class="'ev-' + e.severity">
+      <article v-for="(e, i) in events" :key="i" class="log-card" :class="['ev-' + e.severity, { 'ev-new': isNew(e) }]">
         <div class="row between">
           <span class="ev-action" :class="'sev-' + e.severity" v-text="e.action"></span>
           <span class="muted small" v-text="formatTs(e.ts)"></span>
@@ -105,7 +105,12 @@
 <script defer>
 window.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('logs-app');
-  const REFRESH_MS = 10000;
+  const REFRESH_MS = 2000;
+  const TZ = 'America/Guayaquil';
+  const tsFmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
   const categories = JSON.parse(root.dataset.categories);
   const initial = {
     source: root.dataset.initialSource || '',
@@ -128,9 +133,12 @@ window.addEventListener('DOMContentLoaded', () => {
       const source = ref(initial.source);
       const category = ref(initial.category);
       const q = ref(initial.q);
+      const newKeys = ref(new Set());
 
       let timer = null;
       let inflight = null;
+      let lastTopTs = null;
+      let highlightTimer = null;
 
       async function fetchData() {
         if (document.hidden) return;
@@ -145,7 +153,20 @@ window.addEventListener('DOMContentLoaded', () => {
           const r = await fetch(url, { credentials: 'same-origin', signal: inflight.signal });
           if (!r.ok) { error.value = true; return; }
           const d = await r.json();
+          const fresh = new Set();
+          if (lastTopTs && d.events.length) {
+            for (const e of d.events) {
+              if (e.ts <= lastTopTs) break;
+              fresh.add(e.ts + '|' + e.action + '|' + (e.actor_username || ''));
+            }
+          }
+          if (d.events.length) lastTopTs = d.events[0].ts;
           events.value = d.events;
+          if (fresh.size > 0) {
+            newKeys.value = fresh;
+            if (highlightTimer) clearTimeout(highlightTimer);
+            highlightTimer = setTimeout(() => { newKeys.value = new Set(); }, 2500);
+          }
           error.value = false;
           loading.value = false;
         } catch (e) {
@@ -176,9 +197,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!ts) return '';
         const d = new Date(ts);
         if (isNaN(d.getTime())) return ts;
-        const p = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        return tsFmt.format(d).replace('T', ' ');
       }
+      function rowKey(e) { return e.ts + '|' + e.action + '|' + (e.actor_username || ''); }
+      function isNew(e) { return newKeys.value.has(rowKey(e)); }
       function rolePillClass(role) {
         if (role === 'admin') return 'role-admin';
         if (role === 'user') return 'role-user';
@@ -202,7 +224,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       return {
         loading, error, events, source, category, q, categories, sourceOpts,
-        apply, setSource, clearAll, formatTs, rolePillClass, rolePillLabel,
+        apply, setSource, clearAll, formatTs, rolePillClass, rolePillLabel, isNew,
       };
     },
     delimiters: ['[[', ']]'],
@@ -221,5 +243,11 @@ window.addEventListener('DOMContentLoaded', () => {
   html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
   @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   .live-dot.stalled { background: #f59e0b !important; }
+  .ev-new { animation: ev-flash 2.5s ease-out; }
+  @keyframes ev-flash {
+    0%   { background: rgba(34, 197, 94, 0.35); }
+    60%  { background: rgba(34, 197, 94, 0.18); }
+    100% { background: transparent; }
+  }
 </style>
 {% endblock %}

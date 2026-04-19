@@ -32,7 +32,7 @@
           <tr><th>Fecha</th><th>Categoría</th><th>Acción</th><th>Tenant</th><th>Detalle</th><th>IP</th></tr>
         </thead>
         <tbody>
-          <tr v-for="(e, i) in events" :key="i" :class="'ev-' + e.severity">
+          <tr v-for="(e, i) in events" :key="i" :class="['ev-' + e.severity, { 'ev-new': isNew(e) }]">
             <td class="muted small ts" v-text="formatTs(e.ts)"></td>
             <td><code v-text="e.category"></code></td>
             <td>
@@ -53,7 +53,7 @@
     </div>
 
     <div class="mobile-only logs-cards">
-      <article v-for="(e, i) in events" :key="i" class="log-card" :class="'ev-' + e.severity">
+      <article v-for="(e, i) in events" :key="i" class="log-card" :class="['ev-' + e.severity, { 'ev-new': isNew(e) }]">
         <div class="row between">
           <span class="ev-action" :class="'sev-' + e.severity" v-text="e.action"></span>
           <span class="muted small" v-text="formatTs(e.ts)"></span>
@@ -74,7 +74,12 @@
 window.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('me-logs-app');
   const username = root.dataset.username;
-  const REFRESH_MS = 10000;
+  const REFRESH_MS = 2000;
+  const TZ = 'America/Guayaquil';
+  const tsFmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
 
   const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
 
@@ -83,9 +88,12 @@ window.addEventListener('DOMContentLoaded', () => {
       const loading = ref(true);
       const error = ref(false);
       const events = ref([]);
+      const newKeys = ref(new Set());
 
       let timer = null;
       let inflight = null;
+      let lastTopTs = null;
+      let highlightTimer = null;
 
       async function fetchData() {
         if (document.hidden) return;
@@ -95,7 +103,20 @@ window.addEventListener('DOMContentLoaded', () => {
           const r = await fetch('/api/me/logs', { credentials: 'same-origin', signal: inflight.signal });
           if (!r.ok) { error.value = true; return; }
           const d = await r.json();
+          const fresh = new Set();
+          if (lastTopTs && d.events.length) {
+            for (const e of d.events) {
+              if (e.ts <= lastTopTs) break;
+              fresh.add(e.ts + '|' + e.action);
+            }
+          }
+          if (d.events.length) lastTopTs = d.events[0].ts;
           events.value = d.events;
+          if (fresh.size > 0) {
+            newKeys.value = fresh;
+            if (highlightTimer) clearTimeout(highlightTimer);
+            highlightTimer = setTimeout(() => { newKeys.value = new Set(); }, 2500);
+          }
           error.value = false;
           loading.value = false;
         } catch (e) {
@@ -113,9 +134,9 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!ts) return '';
         const d = new Date(ts);
         if (isNaN(d.getTime())) return ts;
-        const p = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        return tsFmt.format(d).replace('T', ' ');
       }
+      function isNew(e) { return newKeys.value.has(e.ts + '|' + e.action); }
 
       onMounted(() => {
         start();
@@ -127,7 +148,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (inflight) inflight.abort();
       });
 
-      return { loading, error, events, username, formatTs };
+      return { loading, error, events, username, formatTs, isNew };
     },
     delimiters: ['[[', ']]'],
   }).mount('#me-logs-app');
@@ -145,5 +166,11 @@ window.addEventListener('DOMContentLoaded', () => {
   html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
   @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   .live-dot.stalled { background: #f59e0b !important; }
+  .ev-new { animation: ev-flash 2.5s ease-out; }
+  @keyframes ev-flash {
+    0%   { background: rgba(34, 197, 94, 0.35); }
+    60%  { background: rgba(34, 197, 94, 0.18); }
+    100% { background: transparent; }
+  }
 </style>
 {% endblock %}

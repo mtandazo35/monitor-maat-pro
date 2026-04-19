@@ -154,12 +154,15 @@ window.addEventListener('DOMContentLoaded', () => {
       const role = ref(initialRole);
       const pwd = ref('');
       const showPwd = ref(false);
+      const dateFmt = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'America/Guayaquil',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      });
       const createdAtLocal = computed(() => {
         if (!editCreatedAt) return '—';
         const d = new Date(editCreatedAt);
         if (isNaN(d.getTime())) return editCreatedAt.slice(0, 10);
-        const p = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+        return dateFmt.format(d);
       });
       const pwdRules = computed(() => ({
         len: pwd.value.length >= 8,
