@@ -81,6 +81,7 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
+  overflow-x: hidden; /* evita scroll horizontal del drawer offscreen */
 }
 
 /* === Layout sidebar === */
@@ -191,23 +192,47 @@ body {
   z-index: 50;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  padding: 10px 14px;
+  padding: 10px 12px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
+.topbar-mobile .brand { font-size: 1rem; }
+.topbar-mobile .brand-icn { width: 22px; height: 22px; }
 .menu-toggle {
-  background: none; border: 0; color: var(--text);
-  font-size: 1.5rem; cursor: pointer; padding: 4px 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   line-height: 1;
+}
+.menu-toggle:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+.menu-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .sb-backdrop {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.5);
+  background: rgba(0,0,0,.6);
   z-index: 90;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity .2s ease-out;
 }
-body.sb-open .sb-backdrop { display: block; }
+body.sb-open .sb-backdrop { display: block; opacity: 1; }
 
 /* deprecado: mantenemos las reglas mínimas para no romper la pantalla de login */
 .topbar {
@@ -1540,18 +1565,92 @@ pre.mk {
 @media (max-width: 768px) {
   .desktop-only { display: none !important; }
 
-  /* Sidebar como overlay deslizable */
+  /* === Sidebar drawer mobile === */
   .topbar-mobile { display: flex; }
-  .sb-close { display: block; }
+  .sb-close { display: flex; align-items: center; justify-content: center; }
   .sidebar {
     position: fixed;
-    top: 0; left: -280px;
-    height: 100vh; width: 260px;
-    transition: left .22s ease-out;
+    top: 0; left: 0;
+    height: 100vh;
+    height: 100dvh; /* iOS Safari: cuenta la barra dinámica */
+    width: min(280px, 85vw);
     z-index: 100;
+    transform: translateX(-100%);
+    transition: transform .25s ease-out;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 4px 0 24px rgba(0,0,0,0);
+    background: var(--panel);
   }
-  body.sb-open .sidebar { left: 0; }
+  body.sb-open .sidebar {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,.5);
+  }
+  /* Bloquear scroll del body cuando drawer abierto */
+  body.sb-open { overflow: hidden; }
+
+  /* Brand del sidebar más compacto, close button visible y tappable */
+  .sidebar-brand {
+    padding: 14px 16px;
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    z-index: 1;
+    border-bottom: 1px solid var(--border);
+  }
+  .sb-brand { font-size: 1.05rem; }
+  .sb-brand .brand-icn { width: 24px; height: 24px; }
+  .sb-close {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .sb-close:hover {
+    background: var(--border);
+    color: var(--text);
+    border-color: var(--accent);
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Nav: spacing más respirable, icons no se aprietan */
+  .sidebar-nav {
+    padding: 10px 10px;
+    gap: 4px;
+  }
+
+  /* Theme toggle: no wrap, padding consistente, ocupa solo lo necesario */
+  .theme-toggle {
+    margin: 8px 10px;
+    padding: 11px 12px;
+    width: calc(100% - 20px);
+    font-size: .9rem;
+    gap: 10px;
+    min-height: 44px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .theme-toggle svg { flex-shrink: 0; }
+
+  /* Sidebar user pegado al fondo, padding cómodo */
+  .sidebar-user {
+    margin-top: auto;
+    padding: 14px 16px;
+    background: var(--panel-alt);
+  }
+  .sidebar-user .btn.small {
+    min-height: 40px;
+    padding: 9px 12px;
+    font-size: .88rem;
+  }
+
   .content { padding: 16px 12px; }
 
   .container { padding: 0 12px; margin-top: 16px; }
