@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Nuevo tenant · MonitorMaat Admin{% endblock %}
+{% block content %}
+<section class="card card-narrow">
+  <h1>Nuevo tenant</h1>
+  <p class="muted">
+    Asigna automáticamente puerto VPN, puerto Kuma y rangos IP. Levanta los contenedores al terminar.
+  </p>
+  <form method="post" action="/tenants/new">
+    <label>Nombre (solo minúsculas, números y guiones)
+      <input name="name" pattern="[a-z][a-z0-9-]{1,30}" required autofocus placeholder="acme">
+    </label>
+    <div class="row">
+      <button type="submit" class="primary">Crear</button>
+      <a href="/" class="btn">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

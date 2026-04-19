@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Tenants · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>{% if user.role == 'admin' %}Tenants (todos){% else %}Mis tenants{% endif %}</h1>
+  <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
+</div>
+
+{% if user.role == 'admin' %}
+<form method="get" action="/tenants" class="search-bar">
+  <input type="text" name="q" value="{{ q or '' }}"
+         placeholder="Buscar por nombre de tenant, usuario dueño o empresa…">
+  <button type="submit" class="btn">Buscar</button>
+  {% if q %}<a class="btn small" href="/tenants">Limpiar</a>{% endif %}
+</form>
+{% endif %}
+
+{% if q and not tenants %}
+<p class="muted">No se encontraron tenants que coincidan con "{{ q }}".</p>
+{% endif %}
+
+{% if quota %}
+<div class="quota-bar">
+  Quota: <strong>{{ quota.used }}</strong> / {{ quota.total }} tenants usados
+</div>
+{% endif %}
+
+{% if tenants %}
+<div class="desktop-only tbl-wrap">
+<table class="tbl">
+  <thead>
+    <tr>
+      <th>Nombre</th>
+      {% if user.role == 'admin' %}<th>Empresa</th>{% endif %}
+      <th>Slot</th>
+      <th>VPN</th>
+      <th>Kuma</th>
+      <th>Subred VPN</th>
+      <th>OpenVPN</th>
+      <th>Kuma</th>
+      <th>IP pública</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tenants %}
+    <tr>
+      <td><a href="/tenants/{{ t.name }}"><strong>{{ t.name }}</strong></a></td>
+      {% if user.role == 'admin' %}
+      <td>
+        {{ t.owner_company or t.owner_username or '—' }}
+        {% if t.owner_username %}<div class="muted small">{{ t.owner_username }}</div>{% endif %}
+      </td>
+      {% endif %}
+      <td>{{ t.slot }}</td>
+      <td>{{ t.vpn_port }}/tcp</td>
+      <td><a href="http://{{ t.public_ip }}:{{ t.kuma_port }}" target="_blank" rel="noopener">:{{ t.kuma_port }} ↗</a></td>
+      <td>{{ t.vpn_subnet }}/24</td>
+      <td><span class="status status-{{ t.ovpn_status }}">{{ t.ovpn_status }}</span></td>
+      <td><span class="status status-{{ t.kuma_status }}">{{ t.kuma_status }}</span></td>
+      <td class="muted">{{ t.public_ip }}</td>
+      <td><a class="btn small" href="/tenants/{{ t.name }}">Administrar</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="mobile-only tenant-cards">
+  {% for t in tenants %}
+  <article class="tenant-card">
+    <div class="tenant-card-head">
+      <a href="/tenants/{{ t.name }}" class="tenant-card-name">{{ t.name }}</a>
+      <span class="muted">slot {{ t.slot }}</span>
+    </div>
+    {% if user.role == 'admin' and (t.owner_company or t.owner_username) %}
+    <div class="tenant-card-owner">
+      {{ t.owner_company or '—' }} <span class="muted">({{ t.owner_username }})</span>
+    </div>
+    {% endif %}
+    <div class="tenant-card-status">
+      <span class="status status-{{ t.ovpn_status }}">VPN {{ t.ovpn_status }}</span>
+      <span class="status status-{{ t.kuma_status }}">Kuma {{ t.kuma_status }}</span>
+    </div>
+    <dl class="tenant-card-grid">
+      <dt>OpenVPN</dt><dd><code>{{ t.public_ip }}:{{ t.vpn_port }}/tcp</code></dd>
+      <dt>Kuma</dt>
+      <dd>
+        <a href="http://{{ t.public_ip }}:{{ t.kuma_port }}" target="_blank" rel="noopener">
+          :{{ t.kuma_port }} ↗
+        </a>
+      </dd>
+      <dt>Subred VPN</dt><dd><code>{{ t.vpn_subnet }}/24</code></dd>
+    </dl>
+    <a class="btn primary" href="/tenants/{{ t.name }}">Administrar →</a>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No hay tenants todavía. Creá el primero.</p>
+{% endif %}
+{% endblock %}

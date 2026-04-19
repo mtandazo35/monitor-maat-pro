@@ -1,0 +1,23 @@
+name: kumavpn-admin
+
+services:
+  web:
+    build: ./web
+    image: kumavpn/web:latest
+    container_name: kumavpn-web
+    restart: unless-stopped
+    environment:
+      KUMAVPN_BASE_PATH: /opt/kumavpn
+      ADMIN_USER: ${ADMIN_USER:?set ADMIN_USER in .env}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      PUBLIC_IP: ${PUBLIC_IP:-}
+      VPN_PORT_BASE: ${VPN_PORT_BASE:-1193}
+      KUMA_PORT_BASE: ${KUMA_PORT_BASE:-3000}
+      VPN_SUBNET_PREFIX: ${VPN_SUBNET_PREFIX:-100.64}
+      DOCKER_SUBNET_PREFIX: ${DOCKER_SUBNET_PREFIX:-172.30}
+    ports:
+      - "127.0.0.1:${ADMIN_PORT:-8000}:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/kumavpn:/opt/kumavpn

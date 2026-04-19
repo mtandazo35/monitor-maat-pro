@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Logs · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Eventos del sistema</h1>
+</div>
+
+<form method="get" action="/logs" class="logs-filters">
+  <div class="filter-group">
+    <span class="filter-label">Origen:</span>
+    <a class="chip {% if not filters.source %}chip-on{% endif %}"
+       href="/logs?{% if filters.category %}category={{ filters.category }}&{% endif %}{% if filters.q %}q={{ filters.q }}{% endif %}">Todos</a>
+    {% for s, label in [('system','Sistema'),('admin','Admin'),('user','Clientes')] %}
+    <a class="chip {% if filters.source == s %}chip-on{% endif %}"
+       href="/logs?source={{ s }}{% if filters.category %}&category={{ filters.category }}{% endif %}{% if filters.q %}&q={{ filters.q }}{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="filter-group">
+    <select name="category" onchange="this.form.submit()">
+      <option value="">Todas las categorías</option>
+      {% for c in categories %}
+      <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="Buscar usuario, tenant, acción, detalle…">
+    {% if filters.source %}<input type="hidden" name="source" value="{{ filters.source }}">{% endif %}
+    <button type="submit" class="btn">Aplicar</button>
+    {% if filters.source or filters.category or filters.q %}
+    <a class="btn small" href="/logs">Limpiar</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if events %}
+<div class="desktop-only tbl-wrap">
+  <table class="tbl logs-tbl">
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Origen</th>
+        <th>Actor</th>
+        <th>Categoría</th>
+        <th>Acción</th>
+        <th>Tenant</th>
+        <th>Sobre</th>
+        <th>Detalle</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr class="ev-{{ e.severity }}">
+        <td class="muted small ts">{{ e.ts|replace('T',' ')|replace('Z','') }}</td>
+        <td>
+          {% if e.actor_role == 'admin' %}<span class="role-pill role-admin">admin</span>
+          {% elif e.actor_role == 'user' %}<span class="role-pill role-user">user</span>
+          {% else %}<span class="role-pill role-system">sistema</span>
+          {% endif %}
+        </td>
+        <td>{{ e.actor_username or '—' }}</td>
+        <td><code>{{ e.category }}</code></td>
+        <td>
+          <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
+        </td>
+        <td>{% if e.tenant_name %}<code>{{ e.tenant_name }}</code>{% else %}—{% endif %}</td>
+        <td>{% if e.target_username %}<code>{{ e.target_username }}</code>{% else %}—{% endif %}</td>
+        <td class="muted small">{{ e.details or '' }}</td>
+        <td class="muted small">{{ e.ip or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="mobile-only logs-cards">
+  {% for e in events %}
+  <article class="log-card ev-{{ e.severity }}">
+    <div class="row between">
+      <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
+      <span class="muted small">{{ e.ts|replace('T',' ')|replace('Z','') }}</span>
+    </div>
+    <div class="log-meta">
+      {% if e.actor_role == 'admin' %}<span class="role-pill role-admin">admin</span>
+      {% elif e.actor_role == 'user' %}<span class="role-pill role-user">user</span>
+      {% else %}<span class="role-pill role-system">sistema</span>
+      {% endif %}
+      <span>{{ e.actor_username or '—' }}</span>
+      <code>{{ e.category }}</code>
+    </div>
+    {% if e.tenant_name %}<div class="muted small">tenant <code>{{ e.tenant_name }}</code></div>{% endif %}
+    {% if e.target_username %}<div class="muted small">sobre <code>{{ e.target_username }}</code></div>{% endif %}
+    {% if e.details %}<div class="muted small">{{ e.details }}</div>{% endif %}
+    {% if e.ip %}<div class="muted small">desde {{ e.ip }}</div>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No hay eventos que coincidan con esos filtros.</p>
+{% endif %}
+{% endblock %}

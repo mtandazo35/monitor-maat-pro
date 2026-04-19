@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Mis logs · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Mis logs</h1>
+</div>
+
+<p class="muted">Eventos de tus servicios y de tus inicios de sesión.</p>
+
+{% if events %}
+<div class="desktop-only tbl-wrap">
+  <table class="tbl logs-tbl">
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Categoría</th>
+        <th>Acción</th>
+        <th>Tenant</th>
+        <th>Detalle</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr class="ev-{{ e.severity }}">
+        <td class="muted small ts">{{ e.ts|replace('T',' ')|replace('Z','') }}</td>
+        <td><code>{{ e.category }}</code></td>
+        <td>
+          <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
+          {% if e.actor_username and e.actor_username != user.username %}
+            <span class="muted small">por {{ e.actor_username }}</span>
+          {% endif %}
+        </td>
+        <td>{% if e.tenant_name %}<code>{{ e.tenant_name }}</code>{% else %}—{% endif %}</td>
+        <td class="muted small">{{ e.details or '' }}</td>
+        <td class="muted small">{{ e.ip or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="mobile-only logs-cards">
+  {% for e in events %}
+  <article class="log-card ev-{{ e.severity }}">
+    <div class="row between">
+      <span class="ev-action sev-{{ e.severity }}">{{ e.action }}</span>
+      <span class="muted small">{{ e.ts|replace('T',' ')|replace('Z','') }}</span>
+    </div>
+    {% if e.tenant_name %}<div class="muted small">tenant <code>{{ e.tenant_name }}</code></div>{% endif %}
+    {% if e.actor_username and e.actor_username != user.username %}
+      <div class="muted small">por {{ e.actor_username }}</div>
+    {% endif %}
+    {% if e.details %}<div class="muted small">{{ e.details }}</div>{% endif %}
+    {% if e.ip %}<div class="muted small">desde {{ e.ip }}</div>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Aún no hay eventos.</p>
+{% endif %}
+{% endblock %}

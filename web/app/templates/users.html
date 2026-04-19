@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Usuarios · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Usuarios</h1>
+  <a class="btn primary" href="/users/new">+ Nuevo usuario</a>
+</div>
+
+<form method="get" action="/users" class="search-bar">
+  <input type="text" name="q" value="{{ q or '' }}"
+         placeholder="Buscar por usuario, nombre, apellido, empresa o email…">
+  <button type="submit" class="btn">Buscar</button>
+  {% if q %}<a class="btn small" href="/users">Limpiar</a>{% endif %}
+</form>
+
+{% if q and not users %}
+<p class="muted">No se encontraron usuarios que coincidan con "{{ q }}".</p>
+{% elif users %}
+<div class="desktop-only tbl-wrap">
+<table class="tbl">
+  <thead>
+    <tr>
+      <th>Usuario</th>
+      <th>Nombre</th>
+      <th>Empresa</th>
+      <th>Contacto</th>
+      <th>Rol</th>
+      <th>Tenants</th>
+      <th>Quota</th>
+      <th>Creado</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><strong>{{ u.username }}</strong></td>
+      <td>
+        {% set fullname = ((u.first_name or '') ~ ' ' ~ (u.last_name or '')).strip() %}
+        {{ fullname or '—' }}
+      </td>
+      <td>{{ u.company_name or '—' }}</td>
+      <td>
+        {% if u.email or u.phone %}
+          {% if u.email %}<div class="small"><a href="mailto:{{ u.email }}">{{ u.email }}</a></div>{% endif %}
+          {% if u.phone %}<div class="small muted">{{ u.phone }}</div>{% endif %}
+        {% else %}—{% endif %}
+      </td>
+      <td><span class="role-pill role-{{ u.role }}">{{ u.role }}</span></td>
+      <td>{{ u.tenant_count }}</td>
+      <td>
+        {% if u.role == 'admin' %}<span class="muted">∞</span>
+        {% elif u.tenant_quota %}{{ u.tenant_quota }}
+        {% else %}<span class="muted">0</span>
+        {% endif %}
+      </td>
+      <td class="muted small">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+      <td>
+        <a class="btn small" href="/users/{{ u.id }}/edit">Editar</a>
+        <form method="post" action="/users/{{ u.id }}/delete" class="inline"
+              onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');">
+          <button class="btn small warn">Borrar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="mobile-only user-list-cards">
+  {% for u in users %}
+  <article class="user-card">
+    <div class="user-card-head">
+      <code class="user-name">{{ u.username }}</code>
+      <span class="role-pill role-{{ u.role }}">{{ u.role }}</span>
+    </div>
+    <dl class="user-card-grid">
+      {% set fullname = ((u.first_name or '') ~ ' ' ~ (u.last_name or '')).strip() %}
+      {% if fullname %}<dt>Nombre</dt><dd>{{ fullname }}</dd>{% endif %}
+      <dt>Empresa</dt><dd>{{ u.company_name or '—' }}</dd>
+      {% if u.email %}<dt>Email</dt><dd><a href="mailto:{{ u.email }}">{{ u.email }}</a></dd>{% endif %}
+      {% if u.phone %}<dt>Tel</dt><dd>{{ u.phone }}</dd>{% endif %}
+      <dt>Tenants</dt>
+      <dd>
+        {{ u.tenant_count }}
+        {% if u.role != 'admin' %}/ {{ u.tenant_quota or 0 }}{% endif %}
+      </dd>
+    </dl>
+    <div class="row">
+      <a class="btn primary" href="/users/{{ u.id }}/edit">Editar</a>
+      <form method="post" action="/users/{{ u.id }}/delete" class="inline"
+            onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');">
+        <button class="btn warn">Borrar</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No hay usuarios todavía.</p>
+{% endif %}
+{% endblock %}

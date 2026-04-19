@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MonitorMaat{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/x-icon" sizes="any" href="/static/favicon.ico">
+  <link rel="alternate icon" type="image/png" sizes="256x256" href="/static/favicon-256.png">
+  <link rel="apple-touch-icon" href="/static/favicon-256.png">
+  <meta name="theme-color" content="#a855f7">
+  <script>
+  (function(){
+    try {
+      var t = localStorage.getItem('mm-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.classList.add('theme-light');
+    } catch(e){}
+  })();
+  window.MM = window.MM || {};
+  MM.togglePwd = function(id, btn){
+    var i = document.getElementById(id);
+    if (!i) return;
+    var show = i.type === 'password';
+    i.type = show ? 'text' : 'password';
+    btn.classList.toggle('showing', show);
+    btn.setAttribute('aria-label', show ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  };
+  </script>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body{% if user %} class="{% if user.role == 'admin' %}bg-admin{% else %}bg-client{% endif %}"{% endif %}>
+{% if user %}
+  {% set p = request.url.path %}
+  <div class="layout">
+    <header class="topbar-mobile">
+      <button class="menu-toggle" aria-label="Menú" onclick="document.body.classList.toggle('sb-open')">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+      </button>
+      <a href="/" class="brand">
+        <img src="/static/favicon.svg" alt="" class="brand-icn"> MonitorMaat
+      </a>
+    </header>
+
+    <div class="sb-backdrop" onclick="document.body.classList.remove('sb-open')"></div>
+
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="sb-brand">
+          <img src="/static/favicon.svg" alt="" class="brand-icn"> MonitorMaat
+        </span>
+        <button class="sb-close" aria-label="Cerrar" onclick="document.body.classList.remove('sb-open')">×</button>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/" class="sidebar-link {% if p == '/' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a href="/tenants" class="sidebar-link {% if p.startswith('/tenants') %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          Tenants
+        </a>
+        {% if user.role == 'admin' %}
+        <a href="/users" class="sidebar-link {% if p.startswith('/users') %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Usuarios
+        </a>
+        <a href="/settings/smtp" class="sidebar-link {% if p == '/settings/smtp' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          SMTP
+        </a>
+        <a href="/settings/telegram" class="sidebar-link {% if p == '/settings/telegram' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          Bot Telegram
+        </a>
+        <a href="/logs" class="sidebar-link {% if p == '/logs' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+          Logs
+        </a>
+        {% else %}
+        <a href="/me/logs" class="sidebar-link {% if p == '/me/logs' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+          Mis logs
+        </a>
+        {% endif %}
+        {% if user.role != 'admin' %}
+        <a href="/me/telegram" class="sidebar-link {% if p == '/me/telegram' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          Mi Telegram
+        </a>
+        {% endif %}
+        <a href="/change-password" class="sidebar-link {% if p == '/change-password' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+          Mi cuenta
+        </a>
+      </nav>
+
+      <button class="theme-toggle" type="button" onclick="MM.toggleTheme()" aria-label="Cambiar tema">
+        <svg class="icn-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <svg class="icn-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <span class="tt-label-dark">Modo claro</span>
+        <span class="tt-label-light">Modo oscuro</span>
+      </button>
+
+      <div class="sidebar-user">
+        <div class="su-name">{{ user.username }}</div>
+        {% if user.company_name %}<div class="su-meta">{{ user.company_name }}</div>{% endif %}
+        <div class="su-meta">
+          <span class="role-pill role-{{ user.role }}">{{ user.role }}</span>
+        </div>
+        <form method="post" action="/logout" class="inline">
+          <button class="btn small" style="width:100%;margin-top:8px">
+            <svg style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Cerrar sesión
+          </button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="content">
+      {% if flash %}
+        <div class="flash flash-{{ flash.level }}">{{ flash.msg }}</div>
+      {% endif %}
+      <div class="container">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+  window.MM = window.MM || {};
+  MM.toggleTheme = function(){
+    var isLight = document.documentElement.classList.toggle('theme-light');
+    try { localStorage.setItem('mm-theme', isLight ? 'light' : 'dark'); } catch(e){}
+  };
+  </script>
+{% else %}
+  {% block content_anon %}{{ self.content() }}{% endblock %}
+{% endif %}
+</body>
+</html>

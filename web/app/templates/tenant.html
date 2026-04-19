@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}{{ tenant.name }} · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>{{ tenant.name }}</h1>
+  <a href="/" class="btn">← Tenants</a>
+</div>
+
+<section class="card">
+  <h2>Resumen</h2>
+  <dl class="grid">
+    {% if user.role == 'admin' %}
+    <dt>Empresa</dt>
+    <dd>
+      {{ tenant.owner_company or '—' }}
+      {% if tenant.owner_username %}<span class="muted">({{ tenant.owner_username }})</span>{% endif %}
+    </dd>
+    {% endif %}
+    <dt>Slot</dt><dd>{{ tenant.slot }}</dd>
+    <dt>IP pública</dt><dd><code>{{ tenant.public_ip }}</code></dd>
+    <dt>OpenVPN</dt>
+    <dd>
+      <code>{{ tenant.public_ip }}:{{ tenant.vpn_port }}/tcp</code>
+      <span class="status status-{{ tenant.ovpn_status }}">{{ tenant.ovpn_status }}</span>
+    </dd>
+    <dt>Kuma</dt>
+    <dd>
+      <a href="http://{{ tenant.public_ip }}:{{ tenant.kuma_port }}" target="_blank" rel="noopener">
+        http://{{ tenant.public_ip }}:{{ tenant.kuma_port }} ↗
+      </a>
+      <span class="status status-{{ tenant.kuma_status }}">{{ tenant.kuma_status }}</span>
+    </dd>
+    <dt>Subred VPN</dt><dd><code>{{ tenant.vpn_subnet }}/24</code></dd>
+    <dt>Red Docker</dt><dd><code>{{ tenant.docker_subnet }}</code></dd>
+  </dl>
+
+  <div class="row">
+    <form method="post" action="/tenants/{{ tenant.name }}/start" class="inline">
+      <button class="btn">Iniciar</button>
+    </form>
+    <form method="post" action="/tenants/{{ tenant.name }}/restart" class="inline">
+      <button class="btn">Reiniciar</button>
+    </form>
+    <form method="post" action="/tenants/{{ tenant.name }}/stop" class="inline">
+      <button class="btn warn">Detener</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="row between">
+    <h2>Usuarios VPN</h2>
+    <form method="post" action="/tenants/{{ tenant.name }}/users/new" class="inline">
+      <button class="btn primary">+ Nuevo usuario VPN</button>
+    </form>
+  </div>
+
+  {% if users %}
+  <div class="desktop-only tbl-wrap">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Clave</th>
+        <th>IP VPN</th>
+        <th>Redes cliente</th>
+        <th>Mikrotik</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td><code>{{ u.username }}</code></td>
+        <td><code>{{ u.password }}</code></td>
+        <td><code>{{ u.ip }}</code></td>
+        <td>
+          {% if u.networks %}
+            <ul class="nets">
+            {% for n in u.networks %}
+              <li>
+                <code>{{ n.cidr }}</code>
+                <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/{{ n.id }}/delete"
+                      class="inline" onsubmit="return confirm('¿Eliminar red {{ n.cidr }}?');">
+                  <button type="submit" class="btn-x" title="Eliminar red">×</button>
+                </form>
+              </li>
+            {% endfor %}
+            </ul>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+          <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/new" class="inline-form">
+            <input name="cidr" placeholder="192.168.1.0/24" required>
+            <button class="btn small">+ Red</button>
+          </form>
+        </td>
+        <td class="mk-cell">
+          {% for label, key in [('RouterOS v6','v6'),('RouterOS v7+','v7')] %}
+          <details class="mk-ver">
+            <summary>{{ label }}</summary>
+            <pre class="mk" id="mk-d-{{ u.id }}-{{ key }}">{{ u.mikrotik[key] }}</pre>
+            <button type="button" class="btn small" onclick="kumaCopy('mk-d-{{ u.id }}-{{ key }}', this)">Copiar</button>
+          </details>
+          {% endfor %}
+        </td>
+        <td>
+          <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/delete"
+                onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');" class="inline">
+            <button class="btn small warn">Borrar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="mobile-only user-cards">
+    {% for u in users %}
+    <article class="user-card">
+      <div class="user-card-head">
+        <code class="user-name">{{ u.username }}</code>
+        <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/delete"
+              onsubmit="return confirm('¿Eliminar usuario {{ u.username }}?');" class="inline">
+          <button class="btn small warn">Borrar</button>
+        </form>
+      </div>
+      <dl class="user-card-grid">
+        <dt>Clave</dt><dd><code>{{ u.password }}</code></dd>
+        <dt>IP VPN</dt><dd><code>{{ u.ip }}</code></dd>
+        <dt>Redes</dt>
+        <dd>
+          {% if u.networks %}
+            <ul class="nets">
+            {% for n in u.networks %}
+              <li>
+                <code>{{ n.cidr }}</code>
+                <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/{{ n.id }}/delete"
+                      class="inline" onsubmit="return confirm('¿Eliminar red {{ n.cidr }}?');">
+                  <button type="submit" class="btn-x" title="Eliminar red">×</button>
+                </form>
+              </li>
+            {% endfor %}
+            </ul>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </dd>
+      </dl>
+      <form method="post" action="/tenants/{{ tenant.name }}/users/{{ u.id }}/networks/new" class="inline-form">
+        <input name="cidr" placeholder="192.168.1.0/24" required>
+        <button class="btn small">+ Red</button>
+      </form>
+      <details class="mk-details">
+        <summary>Snippet Mikrotik</summary>
+        {% for label, key in [('RouterOS v6','v6'),('RouterOS v7+','v7')] %}
+        <div class="mk-ver">
+          <div class="mk-ver-label">{{ label }}</div>
+          <pre class="mk" id="mk-m-{{ u.id }}-{{ key }}">{{ u.mikrotik[key] }}</pre>
+          <button type="button" class="btn small" onclick="kumaCopy('mk-m-{{ u.id }}-{{ key }}', this)">Copiar</button>
+        </div>
+        {% endfor %}
+      </details>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">No hay usuarios VPN todavía.</p>
+  {% endif %}
+</section>
+
+<script>
+function kumaCopy(id, btn) {
+  const text = document.getElementById(id).textContent;
+  const orig = btn.dataset.orig || btn.textContent;
+  btn.dataset.orig = orig;
+
+  function ok() {
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }
+  function fail() {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }
+  function fallback() {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    let success = false;
+    try { success = document.execCommand('copy'); } catch (e) { success = false; }
+    document.body.removeChild(ta);
+    success ? ok() : fail();
+  }
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(ok).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+</script>
+
+<section class="card danger">
+  <h2>Zona peligrosa</h2>
+  <p>Eliminar el tenant detiene los contenedores, borra la config de OpenVPN y el historial de Kuma.</p>
+  <form method="post" action="/tenants/{{ tenant.name }}/delete"
+        onsubmit="return confirm('Esto es irreversible. ¿Seguro?');">
+    <label>Escribí <code>{{ tenant.name }}</code> para confirmar
+      <input name="confirm" autocomplete="off" required>
+    </label>
+    <button class="btn warn">Eliminar tenant</button>
+  </form>
+</section>
+{% endblock %}

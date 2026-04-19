@@ -1,0 +1,48 @@
+# Secrets — NUNCA commitear
+.env
+.env.local
+.env.production
+**/secrets/
+**/auth/passwd
+**/auth/shadow
+**/auth/group
+**/auth/gshadow
+
+# Datos en runtime (cada deploy genera lo suyo)
+tenants/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+openvpn-status.log
+
+# PKI generada (la genera el contenedor en cada deploy)
+**/easy-rsa/
+**/server.conf
+**/ca.crt
+**/ca.key
+**/server.crt
+**/server.key
+**/dh.pem
+**/crl.pem
+**/tc.key
+**/UptimeKuma/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+
+# IDEs / sistema
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docker (logs locales si los hubiera)
+docker-compose.override.yml

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}SMTP · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Configuración SMTP</h1>
+</div>
+
+<section class="card">
+  <h2>Servidor de correo saliente</h2>
+  <p class="muted">
+    Estos datos se usan para enviar credenciales a usuarios nuevos y notificaciones.
+    Quedan guardados en la DB (no en el .env).
+  </p>
+
+  <form method="post" action="/settings/smtp">
+    <div class="smtp-grid">
+      <label>Host / servidor
+        <input name="smtp_host" value="{{ cfg.host or '' }}"
+               placeholder="mail.tudominio.com" required>
+      </label>
+
+      <label>Puerto
+        <input name="smtp_port" type="number" min="1" max="65535"
+               value="{{ cfg.port or 587 }}" required>
+      </label>
+
+      <label>Usuario / correo
+        <input name="smtp_user" value="{{ cfg.user or '' }}"
+               placeholder="facturacion@tudominio.com" required autocomplete="off">
+      </label>
+
+      <label>Contraseña
+        <input name="smtp_password" type="password" autocomplete="new-password"
+               placeholder="{{ '••••••••• (cargada — dejá vacío para mantener)' if cfg.password_set else '' }}">
+      </label>
+
+      <label>Seguridad
+        <select name="smtp_security">
+          <option value="ssl"  {% if cfg.security == 'ssl'  %}selected{% endif %}>SSL (puerto 465)</option>
+          <option value="tls"  {% if cfg.security == 'tls'  %}selected{% endif %}>TLS / STARTTLS (puerto 587)</option>
+          <option value="none" {% if cfg.security == 'none' %}selected{% endif %}>NONE (sin cifrado)</option>
+        </select>
+        <small class="muted">SSL=465 · TLS/STARTTLS=587 · NONE=sin cifrado</small>
+      </label>
+
+      <label>From (remitente)
+        <input name="smtp_from" value="{{ cfg.from or '' }}"
+               placeholder="kumavpn@tudominio.com">
+        <small class="muted">Si lo dejás vacío, se usa el usuario.</small>
+      </label>
+    </div>
+
+    <label>URL pública del panel (incluida en los emails)
+      <input name="public_url" value="{{ cfg.public_url or '' }}"
+             placeholder="https://kumavpn.tudominio.com">
+      <small class="muted">Vacío → se arma con la IP pública y el puerto del panel.</small>
+    </label>
+
+    <div class="row">
+      <button type="submit" class="primary">Guardar</button>
+      <a href="/" class="btn">Cancelar</a>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Probar configuración</h2>
+  <p class="muted">Mandá un email de prueba para verificar que el servidor responde y autentica.</p>
+  <form method="post" action="/settings/smtp/test">
+    <label>Enviar test a
+      <input name="test_to" type="email" required placeholder="vos@tudominio.com">
+    </label>
+    <button type="submit" class="btn">Enviar email de test</button>
+  </form>
+</section>
+{% endblock %}

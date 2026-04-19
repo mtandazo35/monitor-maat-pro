@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pwd_field %}
+{% block title %}Mi Telegram · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Mi Telegram</h1>
+</div>
+
+<section class="card card-narrow">
+  <h2 class="form-section">Mi configuración</h2>
+  <p class="muted">
+    Para recibir notificaciones de tus tenants y tu cuenta tenés que crear tu propio bot
+    de Telegram y cargar acá su <strong>token</strong> y tu <strong>chat_id</strong>.
+  </p>
+
+  <details class="mk-details" style="margin: 6px 0 14px" {% if not user_has_own_token %}open{% endif %}>
+    <summary>¿Cómo creo mi bot y obtengo el chat_id?</summary>
+    <ol style="padding-left: 20px; line-height: 1.7; margin: 8px 0">
+      <li>En Telegram buscá <code>@BotFather</code> → mandá <code>/newbot</code> → seguí los pasos
+          (te pide un nombre y un username terminado en <code>bot</code>).
+          Te entrega un <strong>token</strong> tipo <code>123456:ABC-DEF…</code>.</li>
+      <li>Iniciá una conversación con tu nuevo bot (mandale <code>/start</code>) — sino
+          Telegram bloquea el envío.</li>
+      <li>Para tu <strong>chat_id</strong>: en Telegram hablale a <code>@userinfobot</code> →
+          <code>/start</code> → te devuelve tu ID numérico.</li>
+      <li>Pegá los dos valores abajo y guardá.</li>
+    </ol>
+  </details>
+
+  <form method="post" action="/me/telegram">
+    <label>Mi bot token <span class="muted small">(requerido)</span>
+      {{ pwd_field('me-tg-token', 'telegram_bot_token', autocomplete='off',
+                   placeholder='dej\u00e1 vac\u00edo para mantener el actual') }}
+      {% if user_has_own_token %}
+      <small class="muted">Ya tenés un token cargado. Dejalo vacío si no querés cambiarlo.</small>
+      {% endif %}
+    </label>
+
+    <label>Mi chat_id <span class="muted small">(requerido)</span>
+      <input name="telegram_chat_id" value="{{ user.telegram_chat_id or '' }}"
+             placeholder="123456789" inputmode="numeric">
+    </label>
+
+    <div class="row">
+      <button type="submit" class="primary">Guardar</button>
+    </div>
+  </form>
+
+  {% if user.telegram_chat_id and user_has_own_token %}
+  <hr style="border-color: var(--border); margin: 18px 0">
+  <h2 class="form-section">Probar</h2>
+  <p class="muted" style="margin: 0 0 10px">Te mandamos un mensaje de prueba para confirmar que llega.</p>
+  <form method="post" action="/me/telegram/test">
+    <button type="submit" class="btn">Enviar mensaje de test</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if user.telegram_chat_id and user_has_own_token %}
+{% set off_set = (user.telegram_off or '').split(',') %}
+<section class="card card-narrow">
+  <h2 class="form-section">¿Qué notificaciones querés recibir?</h2>
+  <p class="muted" style="font-size:.88rem">Marcá los eventos por los que querés recibir mensaje. Lo desmarcado no te llega.</p>
+
+  <form method="post" action="/me/telegram/preferences">
+    {% for k, label, desc in [
+      ('account_welcome',         'Bienvenida y credenciales',     'Cuando se crea tu cuenta o regeneran tu password'),
+      ('tenant_created',          'Tenant creado',                 'Cuando se levanta un nuevo tenant tuyo'),
+      ('tenant_started',          'Tenant iniciado',               'Cuando se ejecuta start desde el panel'),
+      ('tenant_stopped',          'Tenant detenido',               'Cuando se ejecuta stop desde el panel'),
+      ('tenant_restarted',        'Tenant reiniciado',             'Cuando alguien reinicia tu tenant'),
+      ('tenant_deleted',          'Tenant eliminado',              'Cuando se borra un tenant tuyo (importante)'),
+    ] %}
+    <label class="pref-row">
+      <input type="checkbox" name="pref" value="{{ k }}" {% if k not in off_set %}checked{% endif %}>
+      <span>
+        <strong>{{ label }}</strong>
+        <small class="muted">{{ desc }}</small>
+      </span>
+    </label>
+    {% endfor %}
+    <div class="row" style="margin-top:14px">
+      <button type="submit" class="primary">Guardar preferencias</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

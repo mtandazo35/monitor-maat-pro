@@ -1,0 +1,128 @@
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime
+
+from config import DB_PATH
+
+
+def init_db() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with connect() as con:
+        con.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                company_name TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                phone_cc TEXT,
+                phone TEXT,
+                email TEXT,
+                telegram_chat_id TEXT,
+                telegram_bot_token TEXT,
+                telegram_off TEXT,
+                tenant_quota INTEGER,
+                must_change_password INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS tenants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                slot INTEGER UNIQUE NOT NULL,
+                vpn_port INTEGER NOT NULL,
+                kuma_port INTEGER NOT NULL,
+                vpn_subnet TEXT NOT NULL,
+                vpn_mask TEXT NOT NULL,
+                docker_subnet TEXT NOT NULL,
+                public_ip TEXT,
+                owner_id INTEGER REFERENCES users(id),
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS vpn_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                ip TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(tenant_id, username)
+            );
+
+            CREATE TABLE IF NOT EXISTS vpn_networks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vpn_user_id INTEGER NOT NULL REFERENCES vpn_users(id) ON DELETE CASCADE,
+                cidr TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(vpn_user_id, cidr)
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                actor_user_id INTEGER,
+                actor_username TEXT,
+                actor_role TEXT,
+                target_user_id INTEGER,
+                target_username TEXT,
+                tenant_id INTEGER,
+                tenant_name TEXT,
+                category TEXT NOT NULL,
+                action TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'info',
+                details TEXT,
+                ip TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
+            CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_user_id);
+            CREATE INDEX IF NOT EXISTS idx_events_role ON events(actor_role);
+            CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
+            CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);
+            """
+        )
+
+        # Migración: agregar owner_id a tenants existentes que no la tengan
+        cols = [r[1] for r in con.execute("PRAGMA table_info(tenants)").fetchall()]
+        if "owner_id" not in cols:
+            con.execute("ALTER TABLE tenants ADD COLUMN owner_id INTEGER REFERENCES users(id)")
+
+        # Migración: agregar email + must_change_password a users existentes
+        ucols = [r[1] for r in con.execute("PRAGMA table_info(users)").fetchall()]
+        if "email" not in ucols:
+            con.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        if "must_change_password" not in ucols:
+            con.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+        for col in ("first_name", "last_name", "phone", "phone_cc", "telegram_chat_id", "telegram_bot_token", "telegram_off"):
+            if col not in ucols:
+                con.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+        # birth_date fue removido: si la columna existe la dropeamos (SQLite 3.35+)
+        if "birth_date" in ucols:
+            try:
+                con.execute("ALTER TABLE users DROP COLUMN birth_date")
+            except Exception:
+                pass
+
+
+@contextmanager
+def connect():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield con
+        con.commit()
+    finally:
+        con.close()
+
+
+def now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pwd_field %}
+{% block title %}{{ 'Editar usuario' if edit else 'Nuevo usuario' }} · MonitorMaat Admin{% endblock %}
+{% block content %}
+<section class="card card-narrow">
+  <h1>{{ 'Editar usuario' if edit else 'Nuevo usuario' }}</h1>
+  {% if edit %}
+    <p class="muted">Editando <strong>{{ edit.username }}</strong></p>
+  {% endif %}
+
+  <form method="post" action="{{ ('/users/' ~ edit.id ~ '/edit') if edit else '/users/new' }}">
+
+    <h3 class="form-section">Acceso</h3>
+
+    {% if not edit %}
+    <label>Usuario (login)
+      <input name="username" pattern="[a-z][a-z0-9_-]{1,30}" required autofocus
+             placeholder="cliente1">
+    </label>
+    {% endif %}
+
+    <label>Rol
+      <select name="role">
+        <option value="user" {% if edit and edit.role == 'user' %}selected{% endif %}>user</option>
+        <option value="admin" {% if edit and edit.role == 'admin' %}selected{% endif %}>admin</option>
+      </select>
+    </label>
+
+    <label>Quota de tenants (vacío o 0 = ninguno; admin ignora la quota)
+      <input type="number" name="tenant_quota" min="0"
+             value="{{ edit.tenant_quota if edit and edit.tenant_quota else '' }}"
+             placeholder="ej: 5">
+    </label>
+
+    {% if not edit %}
+    <label>Password (opcional)
+      {{ pwd_field('new-pwd', 'password', autocomplete='new-password', placeholder='dejá vacío para autogenerar y enviar por email') }}
+      <small class="muted">
+        Vacío = generamos una fuerte y la mandamos por email (o te la mostramos).
+        Cargada = mínimo 8 chars + mayúsculas, minúsculas, números y símbolos.
+      </small>
+    </label>
+    {% else %}
+    <label>Cambiar password (opcional)
+      {{ pwd_field('edit-pwd', 'new_password', autocomplete='new-password', placeholder='dejá vacío para no tocar') }}
+      <small class="muted">Si cargás algo: 8+ chars, mayúsculas, minúsculas, números, símbolos.</small>
+    </label>
+    {% endif %}
+
+    <h3 class="form-section">Datos del cliente</h3>
+
+    <div class="form-grid-2">
+      <label>Nombre
+        <input name="first_name" value="{{ edit.first_name or '' if edit else '' }}"
+               placeholder="Juan" maxlength="60">
+      </label>
+      <label>Apellido
+        <input name="last_name" value="{{ edit.last_name or '' if edit else '' }}"
+               placeholder="Pérez" maxlength="60">
+      </label>
+    </div>
+
+    <label>Empresa / razón social
+      <input name="company_name" value="{{ edit.company_name or '' if edit else '' }}"
+             placeholder="Nombre de empresa">
+    </label>
+
+    <label>Teléfono / contacto
+      <div class="phone-row">
+        <input type="tel" name="phone_cc" class="phone-cc" maxlength="6"
+               value="{{ edit.phone_cc or '' if edit else '' }}"
+               placeholder="+593">
+        <input type="tel" name="phone" class="phone-num"
+               value="{{ edit.phone or '' if edit else '' }}"
+               placeholder="999 123 456">
+      </div>
+    </label>
+
+    <label>Email
+      <input type="email" name="email" value="{{ edit.email or '' if edit else '' }}"
+             placeholder="cliente@empresa.com">
+      <small class="muted">Si lo completás y SMTP está configurado, se le manda mail con sus credenciales.</small>
+    </label>
+
+    <label>Telegram chat_id
+      <input name="telegram_chat_id" value="{{ edit.telegram_chat_id or '' if edit else '' }}"
+             placeholder="123456789" inputmode="numeric">
+      <small class="muted">Si lo completás y Telegram está configurado, recibe notificaciones de sus tenants.</small>
+    </label>
+
+    {% if edit %}
+    <label>Fecha de creación
+      <input type="text" value="{{ edit.created_at[:10] if edit.created_at else '—' }}" disabled>
+    </label>
+    {% endif %}
+
+    <div class="row">
+      <button type="submit" class="primary">{{ 'Guardar cambios' if edit else 'Crear usuario' }}</button>
+      <a href="/users" class="btn">Cancelar</a>
+    </div>
+  </form>
+
+  {% if edit %}
+  <hr style="border-color:var(--border);margin:20px 0">
+  <h3 class="form-section">Acciones rápidas</h3>
+  <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline"
+        onsubmit="return confirm('¿Regenerar password de {{ edit.username }} y forzar cambio en próximo login?');">
+    <button class="btn">↻ Regenerar password (manda email si tiene)</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

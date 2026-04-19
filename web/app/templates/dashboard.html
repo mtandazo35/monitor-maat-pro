@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Dashboard</h1>
+  <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
+</div>
+
+<h2 class="dash-section">Resumen <span class="live-dot" title="Actualiza cada 3s"></span></h2>
+<div class="stat-cards">
+  {% if stats.clientes is not none %}
+  <div class="stat-card sc-blue">
+    <div class="sc-icon">👥</div>
+    <div class="sc-body">
+      <div class="sc-value" data-stat="clientes">{{ stats.clientes }}</div>
+      <div class="sc-label">Clientes</div>
+    </div>
+  </div>
+  {% endif %}
+  <div class="stat-card sc-purple">
+    <div class="sc-icon">🗂</div>
+    <div class="sc-body">
+      <div class="sc-value" data-stat="tenants">{{ stats.tenants }}</div>
+      <div class="sc-label">Tenants {% if user.role != 'admin' %}propios{% endif %}</div>
+    </div>
+  </div>
+  <div class="stat-card sc-green">
+    <div class="sc-icon">✅</div>
+    <div class="sc-body">
+      <div class="sc-value" data-stat="running">{{ stats.running }}</div>
+      <div class="sc-label">Servicios corriendo</div>
+      <div class="sc-meta">de <span data-stat="services_total">{{ stats.services_total }}</span></div>
+    </div>
+  </div>
+  <div class="stat-card sc-red">
+    <div class="sc-icon">⏸</div>
+    <div class="sc-body">
+      <div class="sc-value" data-stat="stopped">{{ stats.stopped }}</div>
+      <div class="sc-label">Servicios detenidos</div>
+    </div>
+  </div>
+</div>
+
+{% if sys %}
+<h2 class="dash-section">Recursos del servidor <span class="live-dot" title="Actualiza cada 3s"></span></h2>
+<div class="stat-cards">
+  <div class="stat-card stat-card-meter sc-amber">
+    <div class="sc-icon">🧠</div>
+    <div class="sc-body">
+      <div class="sc-row">
+        <div class="sc-value" data-sys="ram.pct">{{ sys.ram.pct }}%</div>
+        <div class="sc-meta" data-sys="ram.text">{{ sys.ram.used_h }} / {{ sys.ram.total_h }}</div>
+      </div>
+      <div class="sc-label">RAM</div>
+      <div class="meter">
+        <div class="meter-fill" data-sys="ram.bar" style="width: {{ sys.ram.pct }}%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-card stat-card-meter sc-teal">
+    <div class="sc-icon">⚡</div>
+    <div class="sc-body">
+      <div class="sc-row">
+        <div class="sc-value" data-sys="cpu.pct">{{ sys.cpu.pct }}%</div>
+        <div class="sc-meta">{{ sys.cpu.cores }} cores</div>
+      </div>
+      <div class="sc-label">CPU</div>
+      <div class="meter">
+        <div class="meter-fill" data-sys="cpu.bar" style="width: {{ sys.cpu.pct }}%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-card stat-card-meter sc-purple">
+    <div class="sc-icon">💾</div>
+    <div class="sc-body">
+      <div class="sc-row">
+        <div class="sc-value" data-sys="disk.pct">{{ sys.disk.pct }}%</div>
+        <div class="sc-meta" data-sys="disk.text">{{ sys.disk.used_h }} / {{ sys.disk.total_h }}</div>
+      </div>
+      <div class="sc-label">Disco</div>
+      <div class="meter">
+        <div class="meter-fill" data-sys="disk.bar" style="width: {{ sys.disk.pct }}%"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function(){
+  let alive = true;
+  document.addEventListener('visibilitychange', () => {
+    alive = !document.hidden;
+  });
+
+  function setText(sel, text) {
+    document.querySelectorAll(sel).forEach(el => el.textContent = text);
+  }
+  function setStyle(sel, prop, val) {
+    document.querySelectorAll(sel).forEach(el => el.style[prop] = val);
+  }
+
+  async function tick() {
+    if (!alive) return;
+    try {
+      const r = await fetch('/api/stats', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const d = await r.json();
+
+      // Resumen
+      const s = d.stats;
+      document.querySelectorAll('[data-stat]').forEach(el => {
+        const key = el.dataset.stat;
+        if (s[key] !== null && s[key] !== undefined) el.textContent = s[key];
+      });
+
+      // Sistema (solo admin — el endpoint omite `sys` para non-admin)
+      const sys = d.sys;
+      if (sys) {
+        setText('[data-sys="ram.pct"]', sys.ram.pct + '%');
+        setText('[data-sys="ram.text"]', sys.ram.used_h + ' / ' + sys.ram.total_h);
+        setStyle('[data-sys="ram.bar"]', 'width', sys.ram.pct + '%');
+
+        setText('[data-sys="cpu.pct"]', sys.cpu.pct + '%');
+        setStyle('[data-sys="cpu.bar"]', 'width', sys.cpu.pct + '%');
+
+        setText('[data-sys="disk.pct"]', sys.disk.pct + '%');
+        setText('[data-sys="disk.text"]', sys.disk.used_h + ' / ' + sys.disk.total_h);
+        setStyle('[data-sys="disk.bar"]', 'width', sys.disk.pct + '%');
+      }
+    } catch(e) {}
+  }
+
+  setInterval(tick, 3000);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Telegram · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Configuración de Telegram</h1>
+</div>
+
+<section class="card">
+  <h2>Bot</h2>
+  <p class="muted">
+    Te permite enviar notificaciones automáticas (creación de usuarios, eventos de tenants, fallos) a un chat de admin
+    y a cada usuario individual. Datos guardados en la DB.
+  </p>
+
+  <details class="mk-details" style="margin-bottom: 14px">
+    <summary>¿Cómo obtener el token y el chat_id?</summary>
+    <div style="padding: 10px 0; font-size: .9rem">
+      <ol style="padding-left: 20px; line-height: 1.7">
+        <li>Abrí Telegram, hablale a <code>@BotFather</code>, mandá <code>/newbot</code> y seguí las instrucciones. Te da un <strong>token</strong> tipo <code>123456:ABC-DEF...</code>.</li>
+        <li>Iniciá una charla con tu bot (<code>/start</code>).</li>
+        <li>Para el <strong>chat_id del admin</strong>: hablale a <code>@userinfobot</code> o <code>@get_id_bot</code> — te devuelve tu ID numérico.</li>
+        <li>Cargá los dos datos acá y mandá un test.</li>
+        <li>Para que cada cliente reciba notificaciones, cada uno tiene que cargar su propio chat_id en <em>Mi password</em> → <em>Telegram</em>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <form method="post" action="/settings/telegram">
+    <label>Bot token
+      <input name="bot_token" type="password" autocomplete="off"
+             placeholder="{{ '••••••••• (cargado — dejá vacío para mantener)' if cfg.token_set else '123456789:AAH...' }}">
+    </label>
+
+    <label>Chat ID del admin (recibe todas las notificaciones administrativas)
+      <input name="admin_chat_id" value="{{ cfg.admin_chat_id or '' }}"
+             placeholder="123456789">
+    </label>
+
+    <div class="row">
+      <button type="submit" class="primary">Guardar</button>
+      <a href="/" class="btn">Cancelar</a>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Probar configuración</h2>
+  <p class="muted">Enviá un mensaje de test para validar token + chat_id.</p>
+  <form method="post" action="/settings/telegram/test">
+    <label>Chat ID destino (vacío = chat del admin)
+      <input name="test_chat_id" placeholder="dejá vacío para usar el del admin">
+    </label>
+    <button type="submit" class="btn">Enviar test</button>
+  </form>
+</section>
+{% endblock %}

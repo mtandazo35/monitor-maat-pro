@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pwd_field %}
+{% block title %}Iniciar sesión · MonitorMaat{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <aside class="login-hero">
+    <div class="hero-blob blob-1"></div>
+    <div class="hero-blob blob-2"></div>
+    <div class="hero-blob blob-3"></div>
+    <div class="hero-grid"></div>
+
+    <div class="login-hero-content">
+      <svg class="login-svg" viewBox="0 0 200 200" fill="none">
+        <defs>
+          <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fff" stop-opacity=".4"/>
+            <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#7dd3fc"/>
+            <stop offset="100%" stop-color="#c084fc"/>
+          </linearGradient>
+        </defs>
+        <circle cx="100" cy="100" r="92" fill="url(#glow)"/>
+        <circle cx="100" cy="100" r="42" stroke="url(#lg)" stroke-width="3" opacity=".95"/>
+        <circle cx="100" cy="100" r="68" stroke="#fff" stroke-width="1.4" opacity=".5" stroke-dasharray="3 5"/>
+        <circle cx="100" cy="100" r="88" stroke="#fff" stroke-width="1" opacity=".25"/>
+        <circle cx="100" cy="35"  r="7" fill="#fff" class="pulse-1"/>
+        <circle cx="165" cy="100" r="7" fill="#fff" class="pulse-2"/>
+        <circle cx="100" cy="165" r="7" fill="#fff" class="pulse-3"/>
+        <circle cx="35"  cy="100" r="7" fill="#fff" class="pulse-4"/>
+        <circle cx="100" cy="100" r="11" fill="url(#lg)"/>
+        <line x1="100" y1="35"  x2="100" y2="100" stroke="#fff" stroke-width="1.5" opacity=".7"/>
+        <line x1="165" y1="100" x2="100" y2="100" stroke="#fff" stroke-width="1.5" opacity=".7"/>
+        <line x1="100" y1="165" x2="100" y2="100" stroke="#fff" stroke-width="1.5" opacity=".7"/>
+        <line x1="35"  y1="100" x2="100" y2="100" stroke="#fff" stroke-width="1.5" opacity=".7"/>
+      </svg>
+      <h1 class="hero-title">MonitorMaat</h1>
+      <p class="lead">Donde puedes tener el control del monitoreo de tu red</p>
+      <ul class="features">
+        <li><span class="ftr-ic">🛡</span> Tenants aislados con red privada propia</li>
+        <li><span class="ftr-ic">📡</span> Monitoreo end-to-end de la LAN del cliente</li>
+        <li><span class="ftr-ic">👥</span> Multi-usuario con roles y quotas</li>
+        <li><span class="ftr-ic">📧</span> Notificaciones por email automáticas</li>
+        <li><span class="ftr-ic">⚡</span> Métricas de servidor en tiempo real</li>
+      </ul>
+    </div>
+  </aside>
+
+  <section class="login-form">
+    <!-- Mock monitoring panel detrás del card -->
+    <div class="monitor-mock" aria-hidden="true">
+      <div class="mock-card mc-status">
+        <div class="mc-head">
+          <span class="mc-title">Status de servicios</span>
+          <span class="mc-pill mc-ok">Todo operativo</span>
+        </div>
+        <ul class="mc-list">
+          <li><span class="dot dot-ok"></span> mikrotik-acme       <span class="mc-up">99.99%</span></li>
+          <li><span class="dot dot-ok"></span> mikrotik-cliente-2  <span class="mc-up">99.92%</span></li>
+          <li><span class="dot dot-warn"></span> dns-secundario      <span class="mc-up">98.71%</span></li>
+          <li><span class="dot dot-ok"></span> servidor-web        <span class="mc-up">99.98%</span></li>
+          <li><span class="dot dot-ok"></span> radius              <span class="mc-up">99.95%</span></li>
+        </ul>
+      </div>
+
+      <div class="mock-card mc-chart">
+        <div class="mc-head">
+          <span class="mc-title">Latencia (24h)</span>
+          <span class="mc-pill mc-info">avg 24 ms</span>
+        </div>
+        <svg class="spark" viewBox="0 0 320 90" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="g-line" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"  stop-color="#34d399"/>
+              <stop offset="60%" stop-color="#60a5fa"/>
+              <stop offset="100%" stop-color="#a78bfa"/>
+            </linearGradient>
+            <linearGradient id="g-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"  stop-color="#60a5fa" stop-opacity=".35"/>
+              <stop offset="100%" stop-color="#60a5fa" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0 60 L20 55 L40 50 L60 58 L80 40 L100 45 L120 30 L140 38 L160 28 L180 35 L200 22 L220 30 L240 18 L260 28 L280 22 L300 30 L320 25 L320 90 L0 90 Z"
+                fill="url(#g-fill)"/>
+          <path d="M0 60 L20 55 L40 50 L60 58 L80 40 L100 45 L120 30 L140 38 L160 28 L180 35 L200 22 L220 30 L240 18 L260 28 L280 22 L300 30 L320 25"
+                stroke="url(#g-line)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <div class="mock-card mc-bars">
+        <div class="mc-head">
+          <span class="mc-title">Tráfico VPN</span>
+          <span class="mc-pill mc-warn">3 picos</span>
+        </div>
+        <div class="bars">
+          <span style="height:35%"></span>
+          <span style="height:62%"></span>
+          <span style="height:48%"></span>
+          <span style="height:80%"></span>
+          <span style="height:58%"></span>
+          <span style="height:90%"></span>
+          <span style="height:42%"></span>
+          <span style="height:70%"></span>
+          <span style="height:55%"></span>
+          <span style="height:78%"></span>
+          <span style="height:38%"></span>
+          <span style="height:65%"></span>
+        </div>
+      </div>
+
+      <div class="mock-card mc-feed">
+        <div class="mc-head">
+          <span class="mc-title">Actividad en vivo</span>
+          <span class="mc-pill mc-ok">live</span>
+        </div>
+        <ul class="feed-list">
+          <li><span class="feed-time">12:04</span> <span class="dot dot-ok"></span> mikrotik-acme reconectó</li>
+          <li><span class="feed-time">12:02</span> <span class="dot dot-ok"></span> nuevo monitor "ups-sala1"</li>
+          <li><span class="feed-time">11:58</span> <span class="dot dot-warn"></span> latencia alta en dns-sec</li>
+          <li><span class="feed-time">11:51</span> <span class="dot dot-ok"></span> backup diario completo</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="login-card">
+      <h2>Iniciar sesión</h2>
+      {% if flash %}
+        <div class="flash flash-{{ flash.level }}" style="margin: 0 0 14px 0">{{ flash.msg }}</div>
+      {% endif %}
+      <form method="post" action="/login">
+        <label>Usuario
+          <input name="username" autocomplete="username" required autofocus>
+        </label>
+        <label>Contraseña
+          {{ pwd_field('login-pwd', 'password', required=True) }}
+        </label>
+        <button type="submit" class="primary login-btn">Entrar</button>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{# El login no usa el layout con sidebar #}
+{% block content_anon %}{{ self.content() }}{% endblock %}
