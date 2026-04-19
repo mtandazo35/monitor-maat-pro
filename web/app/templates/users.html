@@ -63,7 +63,7 @@
               <span v-else-if="u.tenant_quota" v-text="u.tenant_quota"></span>
               <span v-else class="muted">0</span>
             </td>
-            <td class="muted small" v-text="u.created_at ? u.created_at.slice(0, 10) : '—'"></td>
+            <td class="muted small" v-text="formatDate(u.created_at)"></td>
             <td>
               <a class="btn small" :href="'/users/' + u.id + '/edit'">Editar</a>
               <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
@@ -159,6 +159,13 @@ window.addEventListener('DOMContentLoaded', () => {
       function fullName(u) {
         return ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
       }
+      function formatDate(ts) {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return ts.slice(0, 10);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+      }
       function confirmDelete(ev, username) {
         if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
       }
@@ -166,7 +173,7 @@ window.addEventListener('DOMContentLoaded', () => {
       onMounted(fetchData);
       onBeforeUnmount(() => { if (inflight) inflight.abort(); });
 
-      return { loading, q, users, onSearch, clearSearch, fullName, confirmDelete };
+      return { loading, q, users, onSearch, clearSearch, fullName, formatDate, confirmDelete };
     },
     delimiters: ['[[', ']]'],
   }).mount('#users-app');

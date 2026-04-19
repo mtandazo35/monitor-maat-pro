@@ -5,6 +5,7 @@
 <section id="user-form-app" class="card card-narrow"
          data-edit-role="{{ edit.role if edit else '' }}"
          data-is-edit="{{ '1' if edit else '0' }}"
+         data-edit-created-at="{{ edit.created_at or '' if edit else '' }}"
          v-cloak>
   <h1>{{ 'Editar usuario' if edit else 'Nuevo usuario' }}</h1>
   {% if edit %}
@@ -119,7 +120,7 @@
 
     {% if edit %}
     <label>Fecha de creación
-      <input type="text" value="{{ edit.created_at[:10] if edit.created_at else '—' }}" disabled>
+      <input type="text" :value="createdAtLocal" disabled>
     </label>
     {% endif %}
 
@@ -144,6 +145,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('user-form-app');
   const initialRole = root.dataset.editRole || 'user';
   const isEdit = root.dataset.isEdit === '1';
+  const editCreatedAt = root.dataset.editCreatedAt || '';
   const editUsername = {{ (edit.username | tojson) if edit else '""' }};
 
   const { createApp, ref, computed } = Vue;
@@ -152,6 +154,13 @@ window.addEventListener('DOMContentLoaded', () => {
       const role = ref(initialRole);
       const pwd = ref('');
       const showPwd = ref(false);
+      const createdAtLocal = computed(() => {
+        if (!editCreatedAt) return '—';
+        const d = new Date(editCreatedAt);
+        if (isNaN(d.getTime())) return editCreatedAt.slice(0, 10);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+      });
       const pwdRules = computed(() => ({
         len: pwd.value.length >= 8,
         low: /[a-z]/.test(pwd.value),
@@ -164,7 +173,7 @@ window.addEventListener('DOMContentLoaded', () => {
           ev.preventDefault();
         }
       }
-      return { role, pwd, showPwd, pwdRules, confirmReset };
+      return { role, pwd, showPwd, pwdRules, createdAtLocal, confirmReset };
     },
     delimiters: ['[[', ']]'],
   }).mount('#user-form-app');
