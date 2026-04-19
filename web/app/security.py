@@ -53,11 +53,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Permissions-Policy",
             "geolocation=(), microphone=(), camera=(), payment=()",
         )
-        # CSP básica: scripts inline OK (Vue + flashes), pero no eval, sin frames externos
+        # CSP: 'unsafe-eval' es REQUERIDO porque Vue 3 con templates inline
+        # usa new Function() para compilarlos en runtime. Sin esto los componentes
+        # se quedan colgados en v-cloak y la pagina se ve en blanco.
+        # script-src 'self' sigue protegiendo contra inyeccion de scripts externos.
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
             "font-src 'self'; "
