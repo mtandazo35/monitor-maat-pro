@@ -84,8 +84,18 @@ body {
   /* `clip` (vs hidden) tapa el drawer offscreen pero NO crea scroll context,
      entonces position:sticky del topbar sigue funcionando. Hidden lo rompía. */
   overflow-x: clip;
+  /* Body siempre cubre el viewport completo; sin esto, paginas con poco
+     contenido (ej. /tenants vacio) dejaban ver el bg blanco del <html> */
+  min-height: 100vh;
+  min-height: 100dvh;
 }
-html { overflow-x: clip; }
+html {
+  overflow-x: clip;
+  /* Bg en el html tambien; cuando body.sb-open tiene overflow:hidden y el
+     contenido es corto, el HTML quedaba sin bg = blanco puro abajo */
+  background: var(--bg);
+  min-height: 100%;
+}
 
 /* === Layout sidebar === */
 .layout {
@@ -1604,9 +1614,16 @@ pre.mk {
      Sin esto, layout flex row pone topbar al costado y come ancho al content. */
   .layout {
     display: block;
-    min-height: auto;
+    /* min-height 100dvh para que el contenedor llene el viewport entero
+       aunque la pagina tenga poco contenido (ej. /tenants vacio).
+       Sin esto se veia el bg blanco del html abajo. */
+    min-height: 100dvh;
   }
-  .content { width: 100%; max-width: 100%; min-width: 0; }
+  .content {
+    width: 100%; max-width: 100%; min-width: 0;
+    /* mismo motivo: garantizar que content ocupe todo lo que sobra */
+    min-height: calc(100dvh - 60px); /* 60px aprox del topbar mobile */
+  }
 
   /* Decoraciones de fondo (SVGs admin/cliente) muy intensas en mobile cubrian
      el contenido. Las bajamos para que el contenido se lea bien en pantalla
