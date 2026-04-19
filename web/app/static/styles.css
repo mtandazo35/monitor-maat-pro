@@ -1625,16 +1625,27 @@ pre.mk {
     width: min(280px, 85vw);
     z-index: 100;
     transform: translateX(-100%);
-    transition: transform .25s ease-out;
+    transition: transform .25s ease-out, visibility 0s linear .25s;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     box-shadow: 4px 0 24px rgba(0,0,0,0);
     background: var(--panel);
+    /* Cuando esta cerrado: NO intercepta clicks en la zona offscreen
+       (el bounding box del sidebar offscreen tiene right edge en x=0
+       y bloqueaba taps en el menu-toggle si caian cerca del borde izq) */
+    visibility: hidden;
+    pointer-events: none;
   }
   body.sb-open .sidebar {
     transform: translateX(0);
     box-shadow: 4px 0 24px rgba(0,0,0,.5);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform .25s ease-out, visibility 0s linear 0s;
   }
+  /* Menu-toggle siempre por encima del sidebar para que se pueda toggle
+     (cerrar) tapeando el ☰ aunque el sidebar este abierto */
+  .menu-toggle { position: relative; z-index: 110; }
   /* Bloquear scroll del body cuando drawer abierto */
   body.sb-open { overflow: hidden; }
 
