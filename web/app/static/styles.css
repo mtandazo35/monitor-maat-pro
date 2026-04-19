@@ -81,8 +81,11 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
-  overflow-x: hidden; /* evita scroll horizontal del drawer offscreen */
+  /* `clip` (vs hidden) tapa el drawer offscreen pero NO crea scroll context,
+     entonces position:sticky del topbar sigue funcionando. Hidden lo rompía. */
+  overflow-x: clip;
 }
+html { overflow-x: clip; }
 
 /* === Layout sidebar === */
 .layout {
