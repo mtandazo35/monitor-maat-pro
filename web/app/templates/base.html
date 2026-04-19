@@ -9,6 +9,11 @@
   <link rel="alternate icon" type="image/png" sizes="256x256" href="/static/favicon-256.png">
   <link rel="apple-touch-icon" href="/static/favicon-256.png">
   <meta name="theme-color" content="#a855f7">
+  <!-- FOUC fix CRÍTICO: oculta cualquier elemento con v-cloak antes de que
+       Vue mountee y antes que cargue styles.css externo. Sin esta regla
+       en el head, los [[ expresion ]] de Vue se ven como texto crudo
+       brevemente al hacer refresh. -->
+  <style>[v-cloak]{visibility:hidden!important}</style>
   <script>
   (function(){
     try {
