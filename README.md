@@ -1,176 +1,229 @@
-# KumaVPN — multi-tenant Uptime Kuma + OpenVPN en Docker
+# MonitorMaat
 
-Panel web que genera, levanta y administra stacks aislados de **OpenVPN + Uptime Kuma**, uno por cliente (tenant), en un solo servidor Debian/Ubuntu. Cada tenant tiene su propio puerto OpenVPN, rango VPN, red Docker privada y URL de Kuma separada.
+Plataforma multi-tenant para correr **OpenVPN + Uptime Kuma** aislados por cliente en un solo servidor Debian/Ubuntu.
 
-Replica el flujo del script original `kumavpn-pro` (PAM auth por usuario, `client-config-dir`, `iroute`, `rutas.sh`) dentro de contenedores, y lo expone detrás de un panel web.
+Cada tenant tiene su propio puerto OpenVPN, rango VPN, instancia de Uptime Kuma y URL separada. El panel web (FastAPI) lo gestiona todo: usuarios, roles, quotas, notificaciones por Telegram y Email, logs.
 
 ---
 
 ## Arquitectura
 
 ```
-┌───────────────── host Debian/Ubuntu ──────────────────┐
-│                                                       │
-│   kumavpn-web (panel, FastAPI, puerto 127.0.0.1:8000) │
-│       │  docker.sock                                  │
-│       ▼                                               │
-│   ┌─── tenant "acme" ──────┐  ┌─── tenant "foo" ───┐  │
-│   │ openvpn-acme  :1194/tcp│  │ openvpn-foo :1195  │  │
-│   │ kuma-acme     :3001    │  │ kuma-foo    :3002  │  │
-│   │ net 172.30.1.0/24      │  │ net 172.30.2.0/24  │  │
-│   │ VPN 100.64.1.0/24      │  │ VPN 100.64.2.0/24  │  │
-│   └────────────────────────┘  └────────────────────┘  │
-│                                                       │
-│   Nginx Proxy Manager (tuyo) → 127.0.0.1:3001, 3002   │
-└───────────────────────────────────────────────────────┘
+┌────────────────────── host Debian/Ubuntu ──────────────────────┐
+│                                                                │
+│   kumavpn-web (panel FastAPI, :8000)                           │
+│       │  docker.sock                                           │
+│       ▼                                                        │
+│   ┌─── tenant "acme" ──────────┐  ┌─── tenant "foo" ───────┐   │
+│   │ openvpn-acme  :1194/tcp    │  │ openvpn-foo :1195/tcp  │   │
+│   │ kuma-acme     :3001        │  │ kuma-foo    :3002      │   │
+│   │ VPN net 100.64.1.0/24      │  │ VPN net 100.64.2.0/24  │   │
+│   └────────────────────────────┘  └────────────────────────┘   │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-- El panel y los contenedores Kuma bindean solo a `127.0.0.1`. NPM (que ya gestionás) expone los dominios con TLS.
-- OpenVPN bindea al host en TCP para que los Mikrotik conecten desde afuera.
-- Cada tenant es un `docker-compose.yml` independiente en `/opt/kumavpn/tenants/<nombre>/`.
+- Kuma comparte el network namespace de su openvpn (`network_mode: service:openvpn`) → ve directamente las rutas iroute de la VPN, puede pingear LAN del Mikrotik sin NAT extra.
+- Cada tenant es su propio `docker-compose.yml` en `/opt/kumavpn/tenants/<nombre>/`.
+- `kumavpn-web` administra todo via docker socket.
 
 ---
 
 ## Requisitos del host
 
-- Debian 11/12 o Ubuntu 20.04+
-- Docker Engine + plugin `docker compose` v2
-- `/dev/net/tun` disponible (ya lo tenés en Proxmox/Hetzner con kernel estándar)
-- Puertos abiertos en el firewall: el `VPN_PORT` de cada tenant (1194, 1195, …)
+- Debian 11/12/13 o Ubuntu 20.04+
+- Kernel con `/dev/net/tun` (LXC en Proxmox: `features: nesting=1`)
+- Acceso a internet (para pull de imágenes)
+- Puerto a abrir en firewall: el puerto VPN de cada tenant (1194, 1195, …) y el del panel (8000 por default, o detrás de NPM)
 
 ---
 
 ## Instalación
 
-1. Cloná/copia esta carpeta al servidor, por ejemplo en `/opt/kumavpn-docker/`:
+### Opción 1 — One-liner (recomendada)
 
-   ```bash
-   sudo mkdir -p /opt/kumavpn-docker /opt/kumavpn
-   sudo rsync -a kumavpn-docker/ /opt/kumavpn-docker/
-   cd /opt/kumavpn-docker
-   ```
+Pulla imágenes pre-builteadas desde GitHub Container Registry. **No necesita clonar el repo**.
 
-2. Compilá la imagen OpenVPN (la web la usa para cada tenant):
+```bash
+curl -fsSL https://raw.githubusercontent.com/mtandazo35/monitor-maat/main/get.sh | sudo bash
+```
 
-   ```bash
-   docker build -t kumavpn/openvpn:latest ./openvpn
-   ```
+Variables opcionales:
 
-3. Generá hash de contraseña admin y secret de sesión:
+```bash
+# Password admin específica (default: aleatoria de 20 chars)
+ADMIN_PASS="MiClaveSegura123!" curl -fsSL .../get.sh | sudo bash
 
-   ```bash
-   # Hash bcrypt de la clave admin
-   docker run --rm python:3.12-slim sh -c "pip install -q bcrypt && python -c 'import bcrypt; print(bcrypt.hashpw(b\"MI_CLAVE_FUERTE\", bcrypt.gensalt()).decode())'"
+# Forzar IP pública (default: auto-detect)
+PUBLIC_IP="1.2.3.4" curl -fsSL .../get.sh | sudo bash
 
-   # Secret de sesión
-   openssl rand -hex 32
-   ```
+# Tag específico (default: latest)
+VERSION="v1.0.0" curl -fsSL .../get.sh | sudo bash
 
-4. Copiá `.env.example` → `.env` y completá:
+# Regenerar credenciales aunque ya exista .env
+RESET=1 curl -fsSL .../get.sh | sudo bash
+```
 
-   ```bash
-   cp .env.example .env
-   nano .env      # ADMIN_PASSWORD_HASH, SESSION_SECRET, PUBLIC_IP
-   ```
+Al terminar te imprime URL + usuario + password. **El primer login obliga a cambiar la password** por una propia.
 
-5. Levantá el panel:
+### Opción 2 — Clone + build local (para desarrollo)
 
-   ```bash
-   docker compose up -d --build
-   ```
+```bash
+git clone https://github.com/mtandazo35/monitor-maat.git /opt/monitor-maat
+cd /opt/monitor-maat
+sudo ./install.sh
+```
 
-6. En **Nginx Proxy Manager**, creá un proxy host:
-   - Domain: `kumavpn.tudominio.com`
-   - Scheme: `http`, Forward hostname: `127.0.0.1`, Port: `8000`
-   - Activá SSL con Let's Encrypt.
+Igual que la opción 1 pero buildeando las imágenes localmente desde los Dockerfiles. Útil si vas a modificar el código.
 
-   El panel queda accesible en `https://kumavpn.tudominio.com`.
+---
+
+## Actualizar
+
+```bash
+cd /opt/monitor-maat
+sudo ./update.sh
+```
+
+Detecta automáticamente el modo:
+- **Modo prod** (sin Dockerfiles locales): `docker pull` desde GHCR + retag + recreate
+- **Modo dev** (con Dockerfiles): `git pull` + build local + recreate
+
+Flags:
+- `--no-pull`: solo recreate (sin descargar nada nuevo)
+- `--no-tenants`: solo el panel (no toca los tenants existentes)
 
 ---
 
 ## Uso
 
-1. Entrá al panel y creá un tenant nuevo (ej. `acme`). El sistema:
-   - Asigna slot (1..254), puerto VPN (`1193+slot`), puerto Kuma (`3000+slot`).
-   - Crea `/opt/kumavpn/tenants/acme/{openvpn,kuma}`.
-   - Renderiza `docker-compose.yml` del tenant y lo levanta.
-   - OpenVPN inicializa su PKI en el primer arranque (easy-rsa, DH 2048, tc.key).
+### 1. Crear un cliente (admin)
 
-2. En la pantalla del tenant, **+ Nuevo usuario VPN** crea un usuario Linux en el contenedor OpenVPN y te muestra:
-   - Usuario / contraseña aleatorios.
-   - IP VPN fija (`100.64.<slot>.<n>`).
-   - Snippet listo para pegar en consola Mikrotik (`/interface ovpn-client add ...`).
+Usuarios → **+ Nuevo usuario**:
+- Username login (ej. `cliente1`)
+- Email (opcional, para enviar credenciales por SMTP)
+- Empresa
+- Quota (cuántos tenants puede crear)
+- Password en blanco → autogenera fuerte y fuerza cambio en primer login
 
-3. **+ Red** en cada usuario agrega un `iroute` + `ip route add` para que Kuma (y el resto de la red del tenant) pueda llegar a la LAN detrás del Mikrotik (ej. `192.168.1.0/24`). Reinicia el contenedor OpenVPN automáticamente.
+### 2. Crear un tenant
 
-4. Exponé Kuma por NPM: creá un proxy host por tenant apuntando a `127.0.0.1:<KUMA_PORT>` (lo ves en el dashboard).
+Tenants → **+ Nuevo tenant** → asigna automáticamente:
+- Slot (1..254)
+- Puerto OpenVPN (`1193 + slot`)
+- Puerto Kuma (`3000 + slot`)
+- Subred VPN (`100.64.<slot>.0/24`)
+
+Levanta openvpn + kuma en ~5s (primer tenant más lento por pull de Kuma).
+
+### 3. Crear usuario VPN para un Mikrotik
+
+Tenant → **+ Nuevo usuario VPN** → genera username/password aleatorios + asigna IP VPN. Mostrá el snippet listo para pegar en el Mikrotik (RouterOS v6 y v7+).
+
+### 4. Agregar redes detrás del Mikrotik
+
+Tenant → usuario VPN → form `+ Red` → CIDR de la LAN del cliente (ej. `192.168.88.0/24`). Se agrega:
+- `iroute` al CCD del usuario
+- `ip route replace` al `rutas.sh`
+- SIGHUP a openvpn → la ruta queda activa **sin afectar Kuma** (no recrea el contenedor)
+
+> ⚠ El Mikrotik del cliente debe tener una regla NAT (masquerade) sobre la interfaz LAN para que los devices de la LAN respondan al openvpn server. Ver troubleshooting al final.
 
 ---
 
-## Integración con Nginx Proxy Manager
+## Integración con NPM externo
 
-Para cada tenant, un proxy host en NPM:
+Apuntá los proxy hosts a la IP pública del server con los puertos correspondientes:
 
-| Campo              | Valor                         |
-|--------------------|-------------------------------|
-| Domain Names       | `kuma-acme.tudominio.com`     |
-| Scheme             | `http`                        |
-| Forward Hostname   | `127.0.0.1`                   |
-| Forward Port       | `3001` (ver dashboard)        |
-| Websockets Support | ✅ (Kuma lo necesita)          |
-| SSL                | Let's Encrypt + Force SSL     |
+```
+kumavpn.tudominio.com    → http://204.168.x.x:8000      (panel)
+kuma-acme.tudominio.com  → http://204.168.x.x:3001      (kuma del tenant — ✓ Websockets)
+kuma-foo.tudominio.com   → http://204.168.x.x:3002
+```
+
+---
+
+## Notificaciones
+
+### Email (SMTP) — admin
+Settings → SMTP → cargar host, puerto, user, password, modo (SSL/TLS/none) → guardar → test.
+
+Se usa para mandar credenciales nuevas a clientes que tengan email, y notificaciones administrativas.
+
+### Telegram — bot por usuario
+Cada usuario crea su propio bot con `@BotFather` y carga token + chat_id en **Mi Telegram**. Recibe notificaciones de **sus** tenants (start/stop/restart/delete) según las preferencias que marque.
+
+El admin tiene su propio bot global en Settings → **Bot Telegram** para notificaciones administrativas (creación de usuarios, fallos, etc.).
+
+---
+
+## Logs / Auditoría
+
+- **Admin** → `/logs` con filtros por origen (sistema/admin/clientes), categoría, búsqueda por texto
+- **Cliente** → `/me/logs` con sus propios eventos (sesiones, acciones sobre sus tenants)
+
+Se registra: login_success/fail, logout, password_changed, user_created/updated/deleted, tenant_*, vpn_user_*, network_*, smtp/telegram tests.
 
 ---
 
 ## Estructura en disco
 
 ```
-/opt/kumavpn-docker/          <- este repo (panel + imágenes)
+/opt/monitor-maat/             ← este repo (modo dev) o solo docker-compose.yml + .env (modo prod)
 /opt/kumavpn/
 ├── data/
-│   └── kumavpn.db             <- registro de tenants / usuarios VPN / redes
+│   └── kumavpn.db             ← SQLite con users, tenants, vpn_users, networks, events, settings
 └── tenants/
     └── acme/
-        ├── docker-compose.yml <- generado
-        ├── openvpn/           <- PKI, server.conf, UptimeKuma/ (ccd + rutas.sh)
-        └── kuma/              <- data de Uptime Kuma
+        ├── docker-compose.yml ← generado al crear tenant
+        ├── openvpn/           ← PKI, server.conf, /auth (passwd persistido), UptimeKuma/ (ccd + rutas.sh)
+        └── kuma/              ← data de Uptime Kuma
 ```
-
-Podés entrar a la carpeta del tenant y correr `docker compose` a mano si hace falta debuggear.
-
----
-
-## Caveats y notas
-
-- **Passwords en claro**: el panel guarda las contraseñas VPN para poder mostrarlas luego (igual que el script original). La DB está en `/opt/kumavpn/data/kumavpn.db`, protegela a nivel filesystem.
-- **Reinicio al agregar red**: igual que el script original, agregar una red reinicia el contenedor OpenVPN del tenant (corta conexiones activas unos segundos).
-- **Máx. 254 tenants** por el plan de IPs (`100.64.<1..254>.0/24`). Para más, extender el mapeo.
-- **Eliminar tenant** borra completamente PKI, Kuma data y el registro. No hay undo.
-- **Firewall**: hay que abrir manualmente cada `VPN_PORT` hacia afuera.
-- **IP pública**: si el server tiene NAT, poné `PUBLIC_IP=` en `.env` con la IP que ve el Mikrotik; si no, el panel la detecta por `ip1.dynupdate.no-ip.com`.
-- **Kuma → Mikrotik LAN**: el contenedor OpenVPN hace MASQUERADE sobre `tun0`. Kuma ve la LAN del cliente a través del openvpn, y los dispositivos reciben el tráfico con source-IP del openvpn (no importa para ping/HTTP monitoring).
 
 ---
 
 ## Troubleshooting
 
 ```bash
-# Logs del panel
+# Logs panel
 docker logs -f kumavpn-web
 
-# Logs de un tenant
-docker logs -f openvpn-acme
-docker logs -f kuma-acme
+# Logs tenant
+docker logs -f openvpn-<tenant>
+docker logs -f kuma-<tenant>
 
-# Entrar al OpenVPN de un tenant
-docker exec -it openvpn-acme bash
+# Estado
+docker ps
 
-# Ver usuarios VPN registrados en el sistema del contenedor
-docker exec openvpn-acme getent passwd | tail
+# Entrar a un openvpn
+docker exec -it openvpn-<tenant> bash
+docker exec openvpn-<tenant> cat /var/log/openvpn-status.log
 
-# Ver estado de conexiones OpenVPN
-docker exec openvpn-acme cat /var/log/openvpn-status.log
+# Regenerar credenciales admin
+sudo RESET=1 /opt/monitor-maat/get.sh
+# o (modo dev)
+sudo RESET=1 /opt/monitor-maat/install.sh
 
-# Regenerar stack de un tenant (conserva datos)
-cd /opt/kumavpn/tenants/acme && docker compose up -d --force-recreate
+# Si Kuma no llega a la LAN del Mikrotik:
+# en RouterOS:
+/ip firewall nat
+add chain=srcnat action=masquerade src-address=100.64.<slot>.0/24 out-interface=<TU_INTERFAZ_LAN>
 ```
+
+---
+
+## Desarrollo
+
+CI/CD via GitHub Actions: cada push a `main` builds + pushea las imágenes a GHCR como `ghcr.io/mtandazo35/monitor-maat-web:latest` y `monitor-maat-openvpn:latest` (más tags `sha-XXX` por commit y `vX.Y.Z` por tag).
+
+Para que get.sh funcione contra GHCR sin auth, las imágenes deben ser **públicas**. Después del primer push, en GitHub:
+- Settings del repo → Packages → ver `monitor-maat-web` y `monitor-maat-openvpn`
+- Cada uno → Settings (al final) → "Change visibility" → **Public**
+
+Si querés que sigan privadas, usá `docker login ghcr.io` con un PAT antes de correr `get.sh`.
+
+---
+
+## Licencia
+
+Privado — solo uso interno.

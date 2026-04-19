@@ -1,0 +1,18 @@
+# docker-compose.yml para deploy desde imágenes pre-builteadas en GHCR.
+# Usado por get.sh — no requiere clonar el repo ni buildear nada local.
+name: kumavpn-admin
+
+services:
+  web:
+    image: ghcr.io/mtandazo35/monitor-maat-web:latest
+    container_name: kumavpn-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      KUMAVPN_BASE_PATH: /opt/kumavpn
+    ports:
+      - "${ADMIN_PORT:-8000}:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/kumavpn:/opt/kumavpn
