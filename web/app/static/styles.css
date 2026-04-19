@@ -1565,6 +1565,15 @@ pre.mk {
 @media (max-width: 768px) {
   .desktop-only { display: none !important; }
 
+  /* En mobile el sidebar es drawer (fixed, fuera del flow), entonces la layout
+     debe stackear topbar-mobile arriba y content abajo full-width.
+     Sin esto, layout flex row pone topbar al costado y come ancho al content. */
+  .layout {
+    display: block;
+    min-height: auto;
+  }
+  .content { width: 100%; max-width: 100%; min-width: 0; }
+
   /* === Sidebar drawer mobile === */
   .topbar-mobile { display: flex; }
   .sb-close { display: flex; align-items: center; justify-content: center; }
