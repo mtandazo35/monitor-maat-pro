@@ -67,7 +67,11 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=config.SESSION_SECRET,
     https_only=security.secure_cookies_enabled(),
-    same_site="strict",
+    # 'lax' (no 'strict'): permite enviar cookie en navigation top-level
+    # GET incluyendo después del 303 redirect post-login (que con 'strict'
+    # algunos browsers omitían, dejando al user en loop de login).
+    # Igual de seguro contra CSRF: POST cross-site no envía cookie con lax.
+    same_site="lax",
     max_age=60 * 60 * 24 * 7,  # 7 días
 )
 

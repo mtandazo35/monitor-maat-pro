@@ -1577,6 +1577,12 @@ pre.mk {
   }
   .content { width: 100%; max-width: 100%; min-width: 0; }
 
+  /* Decoraciones de fondo (SVGs admin/cliente) muy intensas en mobile cubrian
+     el contenido. Las bajamos para que el contenido se lea bien en pantalla
+     chica donde la decoracion compite mas por el espacio visual. */
+  body.bg-admin::before { opacity: .06 !important; }
+  body.bg-client::before { opacity: .15 !important; mix-blend-mode: normal !important; }
+
   /* === Sidebar drawer mobile === */
   .topbar-mobile { display: flex; }
   .sb-close { display: flex; align-items: center; justify-content: center; }
