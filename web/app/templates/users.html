@@ -76,7 +76,6 @@
             <td class="muted small" v-text="formatDate(u.created_at)"></td>
             <td>
               <a class="btn small" :href="'/users/' + u.id + '/edit'">Editar</a>
-              <a v-if="u.role !== 'admin'" class="btn small" :href="'/billing/' + u.id">Pagos</a>
               <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
                     @submit="confirmDelete($event, u.username)">
                 <button class="btn small warn">Borrar</button>
@@ -124,7 +123,6 @@
         </dl>
         <div class="row">
           <a class="btn primary" :href="'/users/' + u.id + '/edit'">Editar</a>
-          <a v-if="u.role !== 'admin'" class="btn" :href="'/billing/' + u.id">Pagos</a>
           <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
                 @submit="confirmDelete($event, u.username)">
             <button class="btn warn">Borrar</button>

@@ -2,41 +2,54 @@
 {% from "_macros.html" import pwd_field %}
 {% block title %}{{ 'Editar usuario' if edit else 'Nuevo usuario' }} · MonitorMaat Admin{% endblock %}
 {% block content %}
-<section id="user-form-app" class="card card-narrow"
-         data-edit-role="{{ edit.role if edit else '' }}"
-         data-is-edit="{{ '1' if edit else '0' }}"
-         data-edit-created-at="{{ edit.created_at or '' if edit else '' }}"
-         v-cloak>
-  <h1>{{ 'Editar usuario' if edit else 'Nuevo usuario' }}</h1>
-  {% if edit %}
-    <p class="muted">Editando <strong>{{ edit.username }}</strong></p>
-  {% endif %}
 
-  <form method="post" action="{{ ('/users/' ~ edit.id ~ '/edit') if edit else '/users/new' }}">
+<div class="row between" style="margin-bottom:14px">
+  <h1 style="margin:0">
+    {% if edit %}
+      Editar <code style="font-size:.85em">{{ edit.username }}</code>
+    {% else %}
+      Nuevo usuario
+    {% endif %}
+  </h1>
+  <a href="/users" class="btn">← Volver</a>
+</div>
 
-    <h3 class="form-section">Acceso</h3>
+<form id="user-form-app"
+      method="post"
+      action="{{ ('/users/' ~ edit.id ~ '/edit') if edit else '/users/new' }}"
+      data-edit-role="{{ edit.role if edit else '' }}"
+      data-is-edit="{{ '1' if edit else '0' }}"
+      data-edit-created-at="{{ edit.created_at or '' if edit else '' }}"
+      v-cloak
+      class="user-form-grid">
+
+  {# === COLUMNA IZQUIERDA: ACCESO === #}
+  <section class="card user-form-card">
+    <h2 class="form-section">Acceso</h2>
 
     {% if not edit %}
     <label>Usuario (login)
       <input name="username" pattern="[a-z][a-z0-9_-]{1,30}" required autofocus
              placeholder="cliente1">
+      <small class="muted">Solo minúsculas, números, guion bajo o guion. Arranca con letra. 2-31 caracteres.</small>
     </label>
     {% endif %}
 
     <label>Rol
       <select name="role" v-model="role">
-        <option value="user">user</option>
-        <option value="admin">admin</option>
+        <option value="user">Cliente (user)</option>
+        <option value="admin">Administrador (admin)</option>
       </select>
     </label>
 
-    <label v-show="role !== 'admin'">Quota de tenants (vacío o 0 = ninguno)
+    <label v-show="role !== 'admin'">Quota de tenants
       <input type="number" name="tenant_quota" min="0"
              value="{{ edit.tenant_quota if edit and edit.tenant_quota else '' }}"
              placeholder="ej: 5">
+      <small class="muted">Cuántos tenants puede crear este cliente. Vacío o 0 = ninguno.</small>
     </label>
-    <p v-show="role === 'admin'" class="muted" style="font-size:.85rem;margin:-6px 0 14px">
-      El rol <strong>admin</strong> ignora la quota de tenants.
+    <p v-show="role === 'admin'" class="form-hint">
+      ℹ El rol <strong>admin</strong> ignora la quota de tenants.
     </p>
 
     {% if not edit %}
@@ -44,28 +57,26 @@
       <span class="pwd-wrap">
         <input id="new-pwd" name="password" :type="showPwd ? 'text' : 'password'"
                v-model="pwd" autocomplete="new-password"
-               placeholder="dejá vacío para autogenerar y enviar por email">
+               placeholder="dejá vacío para autogenerar">
         <button type="button" class="pwd-toggle" :class="{ showing: showPwd }" @click="showPwd = !showPwd" tabindex="-1">
           <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
           <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
         </button>
       </span>
-      <small class="muted">
-        Vacío = generamos una fuerte y la mandamos por email (o te la mostramos).
-      </small>
+      <small class="muted">Vacío → generamos una password fuerte y la mandamos por email.</small>
     </label>
     {% else %}
     <label>Cambiar password (opcional)
       <span class="pwd-wrap">
         <input id="edit-pwd" name="new_password" :type="showPwd ? 'text' : 'password'"
                v-model="pwd" autocomplete="new-password"
-               placeholder="dejá vacío para no tocar">
+               placeholder="dejá vacío para no cambiar">
         <button type="button" class="pwd-toggle" :class="{ showing: showPwd }" @click="showPwd = !showPwd" tabindex="-1">
           <svg class="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
           <svg class="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
         </button>
       </span>
-      <small class="muted">Si cargás algo: 8+ chars, mayúsculas, minúsculas, números, símbolos.</small>
+      <small class="muted">Si cargás algo: 8+ chars, mayús, minús, número y símbolo.</small>
     </label>
     {% endif %}
 
@@ -77,7 +88,16 @@
       <li :class="{ ok: pwdRules.sym }">un símbolo</li>
     </ul>
 
-    <h3 class="form-section">Datos del cliente</h3>
+    {% if edit %}
+    <label>Fecha de creación
+      <input type="text" :value="createdAtLocal" disabled>
+    </label>
+    {% endif %}
+  </section>
+
+  {# === COLUMNA DERECHA: DATOS DEL CLIENTE === #}
+  <section class="card user-form-card">
+    <h2 class="form-section">Datos del cliente</h2>
 
     <div class="form-grid-2">
       <label>Nombre
@@ -109,42 +129,50 @@
     <label>Email
       <input type="email" name="email" value="{{ edit.email or '' if edit else '' }}"
              placeholder="cliente@empresa.com">
-      <small class="muted">Si lo completás y SMTP está configurado, se le manda mail con sus credenciales.</small>
+      <small class="muted">📧 Si SMTP está configurado, se le envían las credenciales y avisos por email.</small>
     </label>
 
     <label>Telegram chat_id
       <input name="telegram_chat_id" value="{{ edit.telegram_chat_id or '' if edit else '' }}"
              placeholder="123456789" inputmode="numeric">
-      <small class="muted">Si lo completás y Telegram está configurado, recibe notificaciones de sus tenants.</small>
+      <small class="muted">💬 Si Telegram está configurado, recibe notificaciones de sus tenants y pagos.</small>
     </label>
+  </section>
 
-    {% if edit %}
-    <label>Fecha de creación
-      <input type="text" :value="createdAtLocal" disabled>
-    </label>
-    {% endif %}
+  {# === BARRA DE ACCIONES (full-width abajo) === #}
+  <div class="user-form-actions">
+    <a href="/users" class="btn">Cancelar</a>
+    <button type="submit" class="primary">
+      {{ '💾 Guardar cambios' if edit else '➕ Crear usuario' }}
+    </button>
+  </div>
+</form>
 
-    <div class="row">
-      <button type="submit" class="primary">{{ 'Guardar cambios' if edit else 'Crear usuario' }}</button>
-      <a href="/users" class="btn">Cancelar</a>
-    </div>
-  </form>
+{# === SECCIONES EXTRA al editar (acciones rápidas + facturación) === #}
+{% if edit %}
+<div class="user-form-extras">
 
-  {% if edit %}
-  <hr style="border-color:var(--border);margin:20px 0">
-  <h3 class="form-section">Acciones rápidas</h3>
-  <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline" @submit="confirmReset">
-    <button class="btn">↻ Regenerar password (manda email si tiene)</button>
-  </form>
+  <section class="card">
+    <h2 class="form-section">Acciones rápidas</h2>
+    <p class="muted small">Acciones que se ejecutan al instante.</p>
+    <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline"
+          onsubmit="return confirm('¿Regenerar password de {{ edit.username }} y forzar cambio en próximo login?');">
+      <button type="submit" class="btn">↻ Regenerar password</button>
+    </form>
+    <p class="muted small" style="margin-top:8px">
+      Se genera una password nueva, se marca para cambio obligatorio en el próximo login y se envía por email si tiene.
+    </p>
+  </section>
+
+  {% if edit.role != 'admin' %}
+  <section class="card">
+    <h2 class="form-section">💳 Facturación y plan</h2>
+    <p class="muted">Asignación de plan, registrar pagos y ver historial se gestionan en el módulo dedicado.</p>
+    <a class="btn primary" href="/billing/{{ edit.id }}">Gestionar facturación →</a>
+  </section>
   {% endif %}
-</section>
 
-{% if edit and edit.role != 'admin' %}
-<section class="card card-narrow">
-  <h2 class="form-section">Facturación</h2>
-  <p class="muted">El estado de pago, registrar nuevos pagos y el historial se gestionan en el módulo dedicado.</p>
-  <a class="btn primary" href="/billing/{{ edit.id }}">Gestionar facturación →</a>
-</section>
+</div>
 {% endif %}
 
 <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
@@ -154,7 +182,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const initialRole = root.dataset.editRole || 'user';
   const isEdit = root.dataset.isEdit === '1';
   const editCreatedAt = root.dataset.editCreatedAt || '';
-  const editUsername = {{ (edit.username if edit else "") | tojson | safe }};
 
   const { createApp, ref, computed } = Vue;
   createApp({
@@ -179,17 +206,81 @@ window.addEventListener('DOMContentLoaded', () => {
         dig: /\d/.test(pwd.value),
         sym: /[^A-Za-z0-9]/.test(pwd.value),
       }));
-      function confirmReset(ev) {
-        if (!confirm('¿Regenerar password de ' + editUsername + ' y forzar cambio en próximo login?')) {
-          ev.preventDefault();
-        }
-      }
-      return { role, pwd, showPwd, pwdRules, createdAtLocal, confirmReset };
+      return { role, pwd, showPwd, pwdRules, createdAtLocal };
     },
     delimiters: ['[[', ']]'],
   }).mount('#user-form-app');
 });
 </script>
 
-<style>[v-cloak] { visibility: hidden; }</style>
+<style>
+  /* Form en grid: 2 columnas en desktop, 1 en mobile.
+     Action bar full-width abajo, mas extras debajo. */
+  .user-form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "acceso"
+      "datos"
+      "actions";
+    gap: 16px;
+    margin: 0;
+  }
+  @media (min-width: 900px) {
+    .user-form-grid {
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas:
+        "acceso datos"
+        "actions actions";
+    }
+  }
+  .user-form-grid > .user-form-card:nth-of-type(1) { grid-area: acceso; }
+  .user-form-grid > .user-form-card:nth-of-type(2) { grid-area: datos; }
+  .user-form-actions {
+    grid-area: actions;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    padding: 4px 0;
+  }
+  .user-form-actions > .btn,
+  .user-form-actions > button { min-width: 140px; }
+
+  .user-form-card { padding: 22px; margin: 0; }
+  .user-form-card label { margin-bottom: 16px; }
+  .user-form-card label:last-of-type { margin-bottom: 0; }
+
+  .user-form-extras {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-top: 18px;
+  }
+  @media (min-width: 900px) {
+    .user-form-extras { grid-template-columns: 1fr 1fr; }
+  }
+
+  .form-hint {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: -4px 0 16px;
+    font-size: .85rem;
+    color: var(--muted);
+  }
+
+  /* Mobile: action bar full-width, botones grandes */
+  @media (max-width: 768px) {
+    .user-form-actions {
+      justify-content: stretch;
+      flex-direction: column-reverse;
+    }
+    .user-form-actions > .btn,
+    .user-form-actions > button { width: 100%; min-height: 44px; }
+  }
+
+  [v-cloak] { visibility: hidden; }
+</style>
 {% endblock %}
