@@ -1643,9 +1643,12 @@ pre.mk {
     pointer-events: auto;
     transition: transform .25s ease-out, visibility 0s linear 0s;
   }
-  /* Menu-toggle siempre por encima del sidebar para que se pueda toggle
-     (cerrar) tapeando el ☰ aunque el sidebar este abierto */
-  .menu-toggle { position: relative; z-index: 110; }
+  /* Cuando el drawer esta abierto, el topbar-mobile (que tiene su propio
+     stacking context z-index:50 y queda DEBAJO del sidebar:100) se oculta.
+     Patron estandar: el user cierra el drawer con la X del sidebar o el
+     backdrop. Tener un menu-toggle visible mientras el drawer esta abierto
+     es confuso y ademas requeriria romper el stacking context. */
+  body.sb-open .topbar-mobile { display: none; }
   /* Bloquear scroll del body cuando drawer abierto */
   body.sb-open { overflow: hidden; }
 
