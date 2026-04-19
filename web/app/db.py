@@ -1,6 +1,6 @@
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from config import DB_PATH
 
@@ -87,6 +87,22 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_events_role ON events(actor_role);
             CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
             CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);
+
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                amount REAL NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                days INTEGER NOT NULL,
+                method TEXT,
+                notes TEXT,
+                paid_at TEXT NOT NULL,
+                registered_by_id INTEGER REFERENCES users(id),
+                registered_by_username TEXT,
+                covers_until TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+            CREATE INDEX IF NOT EXISTS idx_payments_paid_at ON payments(paid_at DESC);
             """
         )
 
@@ -111,6 +127,20 @@ def init_db() -> None:
             except Exception:
                 pass
 
+        # Migración billing: agrega paid_until + payment_warning_sent_for
+        ucols2 = [r[1] for r in con.execute("PRAGMA table_info(users)").fetchall()]
+        if "paid_until" not in ucols2:
+            con.execute("ALTER TABLE users ADD COLUMN paid_until TEXT")
+            # Backfill: usuarios 'user' existentes obtienen 30 días gratis
+            # para no quedar bloqueados al deployar el feature.
+            trial = ((datetime.utcnow() + _EC_OFFSET).date() + timedelta(days=30)).isoformat()
+            con.execute(
+                "UPDATE users SET paid_until = ? WHERE role = 'user' AND paid_until IS NULL",
+                (trial,),
+            )
+        if "payment_warning_sent_for" not in ucols2:
+            con.execute("ALTER TABLE users ADD COLUMN payment_warning_sent_for TEXT")
+
 
 @contextmanager
 def connect():
@@ -126,3 +156,16 @@ def connect():
 
 def now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+# Ecuador no tiene DST, offset fijo UTC-5. Calculamos la fecha "hoy" de Ecuador
+# sin depender de la TZ del container (que podría ser UTC en Docker).
+_EC_OFFSET = timedelta(hours=-5)
+
+
+def today_local() -> date:
+    return (datetime.utcnow() + _EC_OFFSET).date()
+
+
+def today_iso() -> str:
+    return today_local().isoformat()

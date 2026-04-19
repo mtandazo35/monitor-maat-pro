@@ -101,6 +101,45 @@ cambiar la password. La nueva debe tener:</p>
     _send(msg, cfg)
 
 
+def send_payment_warning(
+    to_email: str,
+    username: str,
+    subject: str,
+    body: str,
+    login_url: str = "",
+) -> None:
+    cfg = settings_service.get_smtp_config()
+    if not cfg["host"]:
+        raise EmailNotConfigured("SMTP no configurado (Settings → SMTP)")
+
+    url = login_url or _login_url(cfg)
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = cfg["from"] or cfg["user"]
+    msg["To"] = to_email
+
+    body_text = f"""Hola {username},
+
+{body}
+
+Para más detalle ingresá al panel: {url}
+
+— MonitorMaat
+"""
+    body_html = f"""<html><body style="font-family: -apple-system, sans-serif; max-width: 560px; padding: 20px;">
+<h2 style="color:#b00020">{subject}</h2>
+<p>Hola <strong>{username}</strong>,</p>
+<p>{body}</p>
+<p><a href="{url}" style="background:#0b5394;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;display:inline-block">Ir al panel</a></p>
+<p style="color:#888;font-size:12px">Para renovar tu cuenta, contactá al administrador.</p>
+</body></html>
+"""
+    msg.set_content(body_text)
+    msg.add_alternative(body_html, subtype="html")
+
+    _send(msg, cfg)
+
+
 def send_test(to_email: str) -> None:
     """Envía un email de prueba para validar la configuración SMTP."""
     cfg = settings_service.get_smtp_config()

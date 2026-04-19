@@ -9,6 +9,21 @@
     <a class="btn primary" href="/tenants/new">+ Nuevo tenant</a>
   </div>
 
+  <div v-if="role !== 'admin' && me && me.days_until_due !== null && me.days_until_due <= 7" class="flash"
+       :class="me.days_until_due <= 0 ? 'flash-error' : 'flash-info'"
+       style="margin: 0 0 14px 0">
+    <strong v-if="me.days_until_due > 0">
+      ⚠ Tu cuenta vence en [[ me.days_until_due ]] día[[ me.days_until_due === 1 ? '' : 's' ]] (el [[ me.paid_until ]]).
+    </strong>
+    <strong v-else-if="me.days_until_due === 0">
+      ⚠ Tu cuenta vence hoy ([[ me.paid_until ]]).
+    </strong>
+    <strong v-else>
+      ⛔ Tu cuenta venció hace [[ -me.days_until_due ]] día[[ me.days_until_due === -1 ? '' : 's' ]].
+    </strong>
+    Contactá al administrador para renovar el servicio.
+  </div>
+
   <h2 class="dash-section">Resumen <span class="live-dot" :class="{ stalled: error }" title="Actualiza cada 3s"></span></h2>
   <div class="stat-cards">
     <div v-if="role === 'admin'" class="stat-card sc-blue">
@@ -109,6 +124,7 @@ window.addEventListener('DOMContentLoaded', () => {
         cpu: { pct: 0, cores: 0 },
         disk: { pct: 0, used_h: '', total_h: '' },
       });
+      const me = ref(null);
 
       let timer = null;
       let inflight = null;
@@ -127,6 +143,7 @@ window.addEventListener('DOMContentLoaded', () => {
             Object.assign(sys.cpu, d.sys.cpu);
             Object.assign(sys.disk, d.sys.disk);
           }
+          if (d.me) me.value = d.me;
           error.value = false;
           loading.value = false;
         } catch (e) {
@@ -150,7 +167,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (inflight) inflight.abort();
       });
 
-      return { loading, error, role, stats, sys };
+      return { loading, error, role, stats, sys, me };
     },
     delimiters: ['[[', ']]'],
   }).mount('#dashboard-app');

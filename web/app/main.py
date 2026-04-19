@@ -1,5 +1,6 @@
 import subprocess
 import threading
+import time
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -43,6 +44,17 @@ def _prewarm_images() -> None:
         pass
 
 
+def _payment_reminder_loop() -> None:
+    """Cada hora barre usuarios con paid_until cerca de vencer y manda aviso
+    Telegram + email. Idempotente vía payment_warning_sent_for."""
+    while True:
+        try:
+            usr.send_payment_reminders(notify, mail)
+        except Exception as e:
+            print(f"[payment-reminder] error: {e}")
+        time.sleep(3600)
+
+
 app = FastAPI(title="KumaVPN Admin")
 app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET, https_only=False)
 
@@ -60,6 +72,7 @@ def _startup():
         print(f"[startup] admin inicial creado desde env: {seeded['username']}")
     favicon_gen.ensure_favicons(config.TEMPLATES_DIR.parent / "static")
     threading.Thread(target=_prewarm_images, daemon=True).start()
+    threading.Thread(target=_payment_reminder_loop, daemon=True).start()
 
 
 def _flash(request: Request, msg: str, level: str = "info"):
@@ -93,15 +106,29 @@ class MustChangePassword(Exception):
     pass
 
 
+class PaymentRequired(Exception):
+    pass
+
+
 @app.exception_handler(MustChangePassword)
 async def _must_change_handler(request: Request, exc: MustChangePassword):
     return RedirectResponse("/change-password", status_code=303)
+
+
+@app.exception_handler(PaymentRequired)
+async def _payment_required_handler(request: Request, exc: PaymentRequired):
+    request.session.clear()
+    _flash(request, "Tu cuenta está impaga. Contactá al administrador para renovar.", "error")
+    return RedirectResponse("/login", status_code=303)
 
 
 def current_user(request: Request) -> dict:
     user = auth.session_user(request)
     if not user:
         raise AuthRequired()
+    # Bloqueo por impago: corta la sesión y redirige a login con mensaje.
+    if not usr.is_paid(user):
+        raise PaymentRequired()
     # Si tiene flag, redirigir a /change-password (excepto si ya está en esa ruta o haciendo logout)
     path = request.url.path
     if user.get("must_change_password") and path not in ("/change-password", "/logout"):
@@ -140,6 +167,19 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     ip = _client_ip(request)
     user = auth.authenticate(username.strip(), password)
     if user:
+        if not usr.is_paid(user):
+            events.log(
+                "login_blocked_unpaid", "auth",
+                actor=user, severity="warn",
+                details=f"paid_until={user.get('paid_until')}",
+                ip=ip,
+            )
+            _flash(
+                request,
+                "Tu cuenta está impaga. Contactá al administrador para renovar el servicio.",
+                "error",
+            )
+            return RedirectResponse("/login", status_code=303)
         request.session["user_id"] = user["id"]
         events.log("login_success", "auth", actor=user, ip=ip)
         return RedirectResponse("/", status_code=303)
@@ -256,7 +296,14 @@ def dashboard(request: Request, user: dict = Depends(current_user)):
 @app.get("/api/stats")
 def api_stats(user: dict = Depends(current_user)):
     _, stats = _compute_dashboard_stats(user)
-    payload: dict = {"stats": stats}
+    payload: dict = {
+        "stats": stats,
+        "me": {
+            "paid_until": user.get("paid_until"),
+            "days_until_due": usr.days_until_due(user),
+            "is_paid": usr.is_paid(user),
+        },
+    }
     if user["role"] == "admin":
         payload["sys"] = system_stats.host_stats()
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
@@ -546,9 +593,16 @@ def delete_tenant(
 
 _USER_PUBLIC_FIELDS = (
     "id", "username", "first_name", "last_name", "company_name",
-    "email", "phone", "role", "tenant_count", "tenant_quota",
-    "created_at", "must_change_password",
+    "email", "phone", "phone_cc", "role", "tenant_count", "tenant_quota",
+    "created_at", "must_change_password", "paid_until",
 )
+
+
+def _user_public(u: dict) -> dict:
+    out = {k: u.get(k) for k in _USER_PUBLIC_FIELDS}
+    out["days_until_due"] = usr.days_until_due(u)
+    out["is_paid"] = usr.is_paid(u)
+    return out
 
 
 @app.get("/users", response_class=HTMLResponse)
@@ -567,8 +621,129 @@ def users_list(request: Request, q: str = "", user: dict = Depends(current_admin
 @app.get("/api/users")
 def api_users(q: str = "", user: dict = Depends(current_admin)):
     rows = usr.list_users(search=q or None)
-    safe = [{k: r.get(k) for k in _USER_PUBLIC_FIELDS} for r in rows]
+    safe = [_user_public(r) for r in rows]
     return JSONResponse({"users": safe, "q": q}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/users/{user_id}")
+def api_user_detail(user_id: int, user: dict = Depends(current_admin)):
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    target["tenant_count"] = usr.count_user_tenants(user_id)
+    return JSONResponse(
+        {"user": _user_public(target), "payments": usr.list_payments(user_id)},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/users/{user_id}/payments")
+def user_register_payment(
+    request: Request,
+    user_id: int,
+    amount: str = Form("0"),
+    days: str = Form("30"),
+    currency: str = Form("USD"),
+    method: str = Form(""),
+    notes: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    try:
+        amount_f = float(amount.replace(",", "."))
+        days_i = int(days)
+    except ValueError:
+        _flash(request, "Monto o días inválidos.", "error")
+        return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+    try:
+        payment = usr.register_payment(
+            user_id, amount=amount_f, days=days_i,
+            currency=currency, method=method, notes=notes,
+            registered_by=user,
+        )
+    except usr.UserError as e:
+        _flash(request, str(e), "error")
+        return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+
+    fresh = usr.get_user(user_id)
+    events.log(
+        "payment_registered", "user",
+        actor=user, target_user=target,
+        details=(
+            f"monto={amount_f} {payment['currency']} "
+            f"días={days_i} cubre_hasta={payment['covers_until']}"
+        ),
+        ip=_client_ip(request),
+    )
+    notify.send_admin(
+        f"💸 <b>Pago registrado</b> para <code>{target['username']}</code>\n"
+        f"Monto: {amount_f} {payment['currency']} · Días: {days_i}\n"
+        f"Cubre hasta: <b>{payment['covers_until']}</b>"
+    )
+    notify.send_user(
+        fresh,
+        f"✅ <b>Pago recibido</b>\n\n"
+        f"Tu cuenta queda al día hasta el <b>{payment['covers_until']}</b>.\n"
+        f"Monto: {amount_f} {payment['currency']} · {days_i} días.",
+        event_key="payment_received",
+    )
+    _flash(
+        request,
+        f"Pago registrado. Cuenta cubierta hasta {payment['covers_until']}.",
+        "success",
+    )
+    return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+
+
+@app.post("/users/{user_id}/extend")
+def user_quick_extend(
+    request: Request,
+    user_id: int,
+    days: str = Form("30"),
+    user: dict = Depends(current_admin),
+):
+    """Extensión rápida sin monto (regalo / cortesía)."""
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    try:
+        days_i = int(days)
+    except ValueError:
+        _flash(request, "Días inválidos.", "error")
+        return RedirectResponse("/users", status_code=303)
+    try:
+        payment = usr.register_payment(
+            user_id, amount=0.0, days=days_i,
+            method="cortesía", notes="Extensión sin pago",
+            registered_by=user,
+        )
+    except usr.UserError as e:
+        _flash(request, str(e), "error")
+        return RedirectResponse("/users", status_code=303)
+
+    fresh = usr.get_user(user_id)
+    events.log(
+        "payment_extended", "user",
+        actor=user, target_user=target,
+        details=f"días={days_i} cubre_hasta={payment['covers_until']}",
+        ip=_client_ip(request),
+    )
+    notify.send_user(
+        fresh,
+        f"✅ <b>Cuenta extendida</b>\n\n"
+        f"Tu cuenta queda al día hasta el <b>{payment['covers_until']}</b> "
+        f"({days_i} días de cortesía).",
+        event_key="payment_received",
+    )
+    _flash(
+        request,
+        f"Cuenta de '{target['username']}' extendida {days_i} días "
+        f"(hasta {payment['covers_until']}).",
+        "success",
+    )
+    return RedirectResponse("/users", status_code=303)
 
 
 @app.get("/users/new", response_class=HTMLResponse)

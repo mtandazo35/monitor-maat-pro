@@ -24,12 +24,12 @@
       <thead>
         <tr>
           <th>Usuario</th><th>Nombre</th><th>Empresa</th><th>Contacto</th>
-          <th>Rol</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
+          <th>Rol</th><th>Pago</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="n in 4" :key="n">
-          <td v-for="c in 9" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+          <td v-for="c in 10" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
         </tr>
       </tbody>
     </table>
@@ -41,7 +41,7 @@
         <thead>
           <tr>
             <th>Usuario</th><th>Nombre</th><th>Empresa</th><th>Contacto</th>
-            <th>Rol</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
+            <th>Rol</th><th>Pago</th><th>Tenants</th><th>Quota</th><th>Creado</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -57,6 +57,13 @@
               <template v-else>—</template>
             </td>
             <td><span class="role-pill" :class="'role-' + u.role" v-text="u.role"></span></td>
+            <td>
+              <template v-if="u.role === 'admin'"><span class="muted small">N/A</span></template>
+              <template v-else>
+                <span class="role-pill" :class="paymentBadgeClass(u)" v-text="paymentBadgeLabel(u)"></span>
+                <div class="muted small" v-if="u.paid_until" v-text="u.paid_until"></div>
+              </template>
+            </td>
             <td v-text="u.tenant_count"></td>
             <td>
               <span v-if="u.role === 'admin'" class="muted">∞</span>
@@ -66,6 +73,11 @@
             <td class="muted small" v-text="formatDate(u.created_at)"></td>
             <td>
               <a class="btn small" :href="'/users/' + u.id + '/edit'">Editar</a>
+              <form v-if="u.role !== 'admin'" :action="'/users/' + u.id + '/extend'" method="post"
+                    class="inline" @submit="confirmExtend($event, u.username)">
+                <input type="hidden" name="days" value="30">
+                <button class="btn small">+ 30 d</button>
+              </form>
               <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
                     @submit="confirmDelete($event, u.username)">
                 <button class="btn small warn">Borrar</button>
@@ -98,9 +110,21 @@
             <span v-text="u.tenant_count"></span>
             <span v-if="u.role !== 'admin'"> / <span v-text="u.tenant_quota || 0"></span></span>
           </dd>
+          <template v-if="u.role !== 'admin'">
+            <dt>Pago</dt>
+            <dd>
+              <span class="role-pill" :class="paymentBadgeClass(u)" v-text="paymentBadgeLabel(u)"></span>
+              <div v-if="u.paid_until" class="muted small">hasta <span v-text="u.paid_until"></span></div>
+            </dd>
+          </template>
         </dl>
         <div class="row">
           <a class="btn primary" :href="'/users/' + u.id + '/edit'">Editar</a>
+          <form v-if="u.role !== 'admin'" :action="'/users/' + u.id + '/extend'" method="post"
+                class="inline" @submit="confirmExtend($event, u.username)">
+            <input type="hidden" name="days" value="30">
+            <button class="btn">+ 30 d</button>
+          </form>
           <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
                 @submit="confirmDelete($event, u.username)">
             <button class="btn warn">Borrar</button>
@@ -172,11 +196,35 @@ window.addEventListener('DOMContentLoaded', () => {
       function confirmDelete(ev, username) {
         if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
       }
+      function confirmExtend(ev, username) {
+        if (!confirm('¿Extender 30 días la cuenta de ' + username + ' (sin cobro)?')) ev.preventDefault();
+      }
+      function paymentBadgeLabel(u) {
+        if (!u.is_paid) {
+          const d = u.days_until_due;
+          if (d == null) return 'sin pago';
+          return 'impago (' + Math.abs(d) + ' d)';
+        }
+        const d = u.days_until_due;
+        if (d == null) return 'al día';
+        if (d > 7) return 'al día (' + d + ' d)';
+        if (d > 0) return 'vence en ' + d + ' d';
+        return 'vence hoy';
+      }
+      function paymentBadgeClass(u) {
+        if (!u.is_paid) return 'role-system';
+        const d = u.days_until_due;
+        if (d == null || d > 7) return 'role-admin';
+        return 'role-user';
+      }
 
       onMounted(fetchData);
       onBeforeUnmount(() => { if (inflight) inflight.abort(); });
 
-      return { loading, q, users, onSearch, clearSearch, fullName, formatDate, confirmDelete };
+      return {
+        loading, q, users, onSearch, clearSearch, fullName, formatDate,
+        confirmDelete, confirmExtend, paymentBadgeLabel, paymentBadgeClass,
+      };
     },
     delimiters: ['[[', ']]'],
   }).mount('#users-app');

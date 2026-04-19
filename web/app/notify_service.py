@@ -72,6 +72,8 @@ EVENT_KEYS = (
     "tenant_deleted",
     "account_welcome",
     "account_password_reset",
+    "payment_warning",
+    "payment_received",
 )
 
 
