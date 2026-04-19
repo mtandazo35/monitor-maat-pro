@@ -1119,12 +1119,32 @@ body.bg-client::before {
 }
 
 @media (max-width: 768px) {
-  .login-wrap { grid-template-columns: 1fr; }
-  .login-hero { padding: 36px 20px; min-height: 320px; }
-  .hero-title { font-size: 2rem; }
-  .login-svg { width: 130px; height: 130px; }
-  .features li { font-size: .85rem; }
-  .login-form { padding: 32px 16px; min-height: auto; }
+  /* Mobile: form arriba (above the fold), hero compacto abajo */
+  .login-wrap {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    min-height: auto;
+  }
+  .login-form {
+    order: 1;
+    padding: 24px 16px;
+    min-height: auto;
+  }
+  .login-hero {
+    order: 2;
+    padding: 24px 20px 32px;
+    min-height: auto;
+  }
+  .login-card {
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+  .login-card h2 { margin-bottom: 14px; font-size: 1.4rem; }
+  /* Hero compacto: solo logo + título + lead. Features ocultas en mobile. */
+  .hero-title { font-size: 1.6rem; margin: 8px 0 4px; }
+  .login-hero .lead { font-size: .88rem; margin: 0 0 14px; }
+  .login-svg { width: 86px; height: 86px; }
+  .features { display: none; }
   .monitor-mock { display: none; }
 }
 
