@@ -47,51 +47,100 @@
 
 <section class="card">
   <h2 class="form-section">Planes existentes</h2>
-  {% if plans %}
-  <div class="tbl-wrap">
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th>Orden</th><th>Nombre</th><th>Descripción</th>
-          <th>Precio</th><th>Días</th><th>Activo</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in plans %}
-        <tr>
-          <form method="post" action="/settings/plans/{{ p.id }}/edit">
-            <td><input type="number" name="sort_order" value="{{ p.sort_order }}" style="width:5em"></td>
-            <td><input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em"></td>
-            <td><input name="description" value="{{ p.description or '' }}" maxlength="200"></td>
-            <td>
-              <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required style="width:6em">
-              <select name="currency" style="width:5em">
+  {% if not plans %}
+    <p class="muted">No hay planes todavía. Creá el primero arriba.</p>
+  {% else %}
+    {# Desktop: tabla con inputs inline #}
+    <div class="desktop-only tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Orden</th><th>Nombre</th><th>Descripción</th>
+            <th>Precio</th><th>Días</th><th>Activo</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in plans %}
+          <tr>
+            <form method="post" action="/settings/plans/{{ p.id }}/edit">
+              <td><input type="number" name="sort_order" value="{{ p.sort_order }}" style="width:5em"></td>
+              <td><input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em"></td>
+              <td><input name="description" value="{{ p.description or '' }}" maxlength="200"></td>
+              <td>
+                <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required style="width:6em">
+                <select name="currency" style="width:5em">
+                  {% for c in ['USD','EUR'] %}
+                  <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:5em"></td>
+              <td>
+                <label class="row" style="align-items:center;gap:6px;justify-content:center">
+                  <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
+                </label>
+              </td>
+              <td class="row" style="gap:6px">
+                <button type="submit" class="btn small primary">Guardar</button>
+            </form>
+                <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline"
+                      onsubmit="return confirm('¿Eliminar plan {{ p.name }}? (se desactiva si tiene pagos)');">
+                  <button type="submit" class="btn small warn">Borrar</button>
+                </form>
+              </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Mobile: cards stack #}
+    <div class="mobile-only" style="display:flex;flex-direction:column;gap:14px">
+      {% for p in plans %}
+      <article style="background:var(--panel-alt);border:1px solid var(--border);border-radius:10px;padding:14px">
+        <form method="post" action="/settings/plans/{{ p.id }}/edit">
+          <div class="row between" style="margin-bottom:8px">
+            <strong>Plan #{{ p.id }}</strong>
+            <label class="row" style="gap:6px;align-items:center;font-size:.9rem">
+              <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
+              Activo
+            </label>
+          </div>
+          <label>Nombre
+            <input name="name" value="{{ p.name }}" required maxlength="40">
+          </label>
+          <label>Descripción
+            <input name="description" value="{{ p.description or '' }}" maxlength="200">
+          </label>
+          <div class="form-grid-2">
+            <label>Precio
+              <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required>
+            </label>
+            <label>Moneda
+              <select name="currency">
                 {% for c in ['USD','EUR'] %}
                 <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
                 {% endfor %}
               </select>
-            </td>
-            <td><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:5em"></td>
-            <td>
-              <label class="row" style="align-items:center;gap:6px;justify-content:center">
-                <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
-              </label>
-            </td>
-            <td class="row" style="gap:6px">
-              <button type="submit" class="btn small primary">Guardar</button>
-          </form>
-              <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline"
-                    onsubmit="return confirm('¿Eliminar plan {{ p.name }}? (se desactiva si tiene pagos)');">
-                <button type="submit" class="btn small warn">Borrar</button>
-              </form>
-            </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">No hay planes todavía. Creá el primero arriba.</p>
+            </label>
+          </div>
+          <div class="form-grid-2">
+            <label>Días
+              <input name="days" type="number" min="1" value="{{ p.days }}" required>
+            </label>
+            <label>Orden
+              <input type="number" name="sort_order" value="{{ p.sort_order }}">
+            </label>
+          </div>
+          <button type="submit" class="primary" style="width:100%">Guardar cambios</button>
+        </form>
+        <form method="post" action="/settings/plans/{{ p.id }}/delete" style="margin-top:10px"
+              onsubmit="return confirm('¿Eliminar plan {{ p.name }}? (se desactiva si tiene pagos)');">
+          <button type="submit" class="btn warn" style="width:100%">Borrar plan</button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
   {% endif %}
 </section>
 {% endblock %}

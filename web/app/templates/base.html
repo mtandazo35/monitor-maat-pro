@@ -149,6 +149,12 @@
     var isLight = document.documentElement.classList.toggle('theme-light');
     try { localStorage.setItem('mm-theme', isLight ? 'light' : 'dark'); } catch(e){}
   };
+  // Cerrar sidebar mobile al click en cualquier link interno (incluye navegación con form)
+  document.querySelectorAll('.sidebar a, .sidebar form').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.body.classList.remove('sb-open');
+    });
+  });
   </script>
 {% else %}
   {% block content_anon %}{{ self.content() }}{% endblock %}

@@ -1545,13 +1545,14 @@ pre.mk {
   .sb-close { display: block; }
   .sidebar {
     position: fixed;
-    top: 0; left: -260px;
-    height: 100vh; width: 240px;
+    top: 0; left: -280px;
+    height: 100vh; width: 260px;
     transition: left .22s ease-out;
     z-index: 100;
+    overflow-y: auto;
   }
   body.sb-open .sidebar { left: 0; }
-  .content { padding: 16px; }
+  .content { padding: 16px 12px; }
 
   .container { padding: 0 12px; margin-top: 16px; }
   .topbar { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
@@ -1561,27 +1562,32 @@ pre.mk {
   h1 { font-size: 1.3rem; }
   h2 { font-size: 1.05rem; }
 
-  .card { padding: 14px; margin-bottom: 14px; border-radius: 8px; }
-  .card-narrow { margin: 20px auto; max-width: 100%; }
+  .card { padding: 14px; margin-bottom: 14px; border-radius: 10px; }
+  .card-narrow { margin: 14px auto; max-width: 100%; }
 
+  /* Header rows: título arriba, acciones abajo full-width */
   .row.between { flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
   .row.between h1, .row.between h2 { margin-bottom: 0; flex: 1 1 100%; }
   .row.between form.inline,
-  .row.between > .btn { align-self: flex-start; }
-  .row.between form.inline button { width: 100%; }
+  .row.between > .btn,
+  .row.between > a.btn { align-self: stretch; flex: 1; min-width: 0; }
+  .row.between form.inline button,
+  .row.between > a.btn { width: 100%; }
 
   button, .btn {
-    padding: 10px 14px;
+    padding: 11px 14px;
     font-size: .95rem;
-    min-height: 40px;
+    min-height: 42px;
   }
-  .btn.small { min-height: 32px; padding: 6px 10px; }
+  .btn.small { min-height: 34px; padding: 7px 12px; font-size: .82rem; }
 
-  input, select { padding: 11px 12px; font-size: 1rem; }
+  /* font-size 16px previene zoom-on-focus en iOS Safari */
+  input, select, textarea { padding: 11px 12px; font-size: 16px; }
 
   .tbl { font-size: .85rem; }
   .tbl th, .tbl td { padding: 8px 8px; }
 
+  /* dl.grid: stack key-value para que no se corten */
   .grid { grid-template-columns: 1fr; gap: 2px 0; }
   .grid dt { color: var(--muted); margin-top: 8px; font-size: .82rem; text-transform: uppercase; letter-spacing: .4px; }
   .grid dt:first-child { margin-top: 0; }
@@ -1597,12 +1603,89 @@ pre.mk {
     word-break: break-all;
   }
 
-  .flash { margin: 10px 12px 0; font-size: .9rem; }
+  .flash { margin: 10px 0; font-size: .9rem; padding: 12px 14px; }
+
+  /* Stat cards más compactas */
+  .stat-cards { gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .stat-card { padding: 12px 14px; gap: 10px; border-radius: 10px; }
+  .sc-icon { width: 42px; height: 42px; font-size: 1.25rem; border-radius: 10px; }
+  .sc-value { font-size: 1.5rem; }
+  .sc-label { font-size: .78rem; }
+  .stat-card-meter .sc-value { font-size: 1.25rem; }
+
+  /* Search bar stackable */
+  .search-bar { flex-wrap: wrap; gap: 8px; }
+  .search-bar input { flex: 1 1 100%; }
+  .search-bar button { flex: 1; }
+  .search-bar a.btn { flex: 1; }
+
+  /* Status card grande (me_billing) */
+  .stat-card.account-status-card { padding: 16px !important; }
+  .stat-card.account-status-card .row.between {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .stat-card.account-status-card .row.between > a.btn,
+  .stat-card.account-status-card .row.between > button {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    font-size: 1rem !important;
+    padding: 12px !important;
+  }
+
+  /* Plans grid: full single column en mobile chico */
+  .plans-grid { grid-template-columns: 1fr !important; gap: 12px; }
+  .plan-card { padding: 16px; }
+  .plan-amount { font-size: 1.9rem; }
+
+  /* Tap area para btn-x (eliminar redes pequeñas) */
+  .btn-x { min-height: 36px; min-width: 36px; padding: 8px 10px; font-size: 1.2rem; }
+
+  /* Form inputs dentro de tabla más compactos */
+  .tbl input, .tbl select { font-size: 14px; padding: 7px 8px; }
+
+  /* Cards stack vertical inline-form actions */
+  .inline { display: inline-block; }
+
+  /* Login form en mobile: más espacio respiración */
+  .login-card { padding: 18px; }
+
+  /* Tenant card: botón "Administrar" full width */
+  .tenant-card .btn.primary { padding: 12px; min-height: 44px; }
+
+  /* Sidebar links un toque más altos para tap */
+  .sidebar-link { padding: 12px 14px; font-size: .95rem; }
+  .sidebar-link svg { width: 20px; height: 20px; }
 }
 
 @media (max-width: 480px) {
   .container { padding: 0 8px; }
+  .content { padding: 14px 10px; }
   .card { padding: 12px; }
   .tbl th, .tbl td { padding: 7px 6px; font-size: .8rem; }
   .row { gap: 6px; }
+
+  /* Stat cards 2-col en mobile chico */
+  .stat-cards { grid-template-columns: 1fr 1fr; }
+  .sc-icon { width: 38px; height: 38px; font-size: 1.15rem; }
+  .sc-value { font-size: 1.35rem; }
+
+  .row.between h1 { font-size: 1.15rem; }
+
+  /* Plan card más compacto */
+  .plan-card { padding: 14px; }
+  .plan-amount { font-size: 1.7rem; }
+
+  /* Tablas: forzar font más chico */
+  .tbl { font-size: .78rem; }
+
+  /* Estado card de me_billing */
+  .stat-card.account-status-card h2 { font-size: 1.1rem; }
+}
+
+/* Pantallas EXTRA chicas (≤360px): solo 1 col en stat-cards */
+@media (max-width: 360px) {
+  .stat-cards { grid-template-columns: 1fr; }
+  h1 { font-size: 1.2rem; }
 }
