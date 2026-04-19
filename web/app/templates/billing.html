@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Facturación · MonitorMaat Admin{% endblock %}
+{% block content %}
+<link rel="preload" href="/api/billing{% if q %}?q={{ q|urlencode }}{% endif %}" as="fetch" crossorigin="use-credentials">
+
+<div id="billing-app" data-initial-q="{{ q or '' }}" v-cloak>
+  <div class="row between">
+    <h1>Facturación</h1>
+  </div>
+
+  <form class="search-bar" @submit.prevent="onSearch">
+    <input type="text" v-model="q" placeholder="Buscar por usuario, nombre, empresa o email…">
+    <button type="submit" class="btn">Buscar</button>
+    <a v-if="q" class="btn small" href="#" @click.prevent="clearSearch">Limpiar</a>
+  </form>
+
+  <div v-if="!loading && summary" class="stat-cards" style="margin-bottom:14px">
+    <div class="stat-card sc-blue">
+      <div class="sc-icon">👥</div>
+      <div class="sc-body">
+        <div class="sc-value" v-text="summary.total"></div>
+        <div class="sc-label">Clientes</div>
+      </div>
+    </div>
+    <div class="stat-card sc-green">
+      <div class="sc-icon">✅</div>
+      <div class="sc-body">
+        <div class="sc-value" v-text="summary.paid"></div>
+        <div class="sc-label">Al día</div>
+      </div>
+    </div>
+    <div class="stat-card sc-amber">
+      <div class="sc-icon">⏳</div>
+      <div class="sc-body">
+        <div class="sc-value" v-text="summary.due_soon"></div>
+        <div class="sc-label">Vencen ≤7 d</div>
+      </div>
+    </div>
+    <div class="stat-card sc-red">
+      <div class="sc-icon">⛔</div>
+      <div class="sc-body">
+        <div class="sc-value" v-text="summary.unpaid"></div>
+        <div class="sc-label">Impagos</div>
+      </div>
+    </div>
+  </div>
+
+  <p v-if="!loading && q && clients.length === 0" class="muted">
+    No se encontraron clientes que coincidan con "<span v-text="q"></span>".
+  </p>
+
+  <div v-if="loading" class="tbl-wrap desktop-only">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Cliente</th><th>Empresa</th><th>Estado</th><th>Plan</th>
+          <th>Pagado hasta</th><th>Días</th><th>Total</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="n in 4" :key="n">
+          <td v-for="c in 8" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <template v-if="!loading && clients.length > 0">
+    <div class="desktop-only tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Empresa</th>
+            <th>Estado</th>
+            <th>Plan actual</th>
+            <th>Pagado hasta</th>
+            <th>Días</th>
+            <th>Total cobrado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="c in clients" :key="c.id">
+            <td>
+              <a :href="'/billing/' + c.id"><strong v-text="c.username"></strong></a>
+              <div v-if="fullName(c)" class="muted small" v-text="fullName(c)"></div>
+            </td>
+            <td v-text="c.company_name || '—'"></td>
+            <td>
+              <span class="role-pill" :class="paymentBadgeClass(c)" v-text="paymentBadgeLabel(c)"></span>
+            </td>
+            <td>
+              <template v-if="c.has_payments">
+                <strong v-text="c.last_amount.toFixed(2) + ' ' + c.last_currency"></strong>
+                <span class="muted small"> / [[ c.last_days ]] d</span>
+              </template>
+              <span v-else class="muted">—</span>
+            </td>
+            <td v-text="c.paid_until || '—'"></td>
+            <td v-text="daysText(c)"></td>
+            <td>
+              <span v-if="totalText(c)" v-text="totalText(c)"></span>
+              <span v-else class="muted">—</span>
+            </td>
+            <td>
+              <a class="btn small" :href="'/billing/' + c.id">Gestionar</a>
+              <form :action="'/users/' + c.id + '/extend'" method="post"
+                    class="inline" @submit="confirmExtend($event, c.username)">
+                <input type="hidden" name="days" value="30">
+                <button class="btn small">+ 30 d</button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mobile-only user-list-cards">
+      <article v-for="c in clients" :key="c.id" class="user-card">
+        <div class="user-card-head">
+          <a :href="'/billing/' + c.id" class="user-name"><code v-text="c.username"></code></a>
+          <span class="role-pill" :class="paymentBadgeClass(c)" v-text="paymentBadgeLabel(c)"></span>
+        </div>
+        <dl class="user-card-grid">
+          <dt>Empresa</dt><dd v-text="c.company_name || '—'"></dd>
+          <dt>Plan</dt>
+          <dd>
+            <template v-if="c.has_payments">
+              <strong v-text="c.last_amount.toFixed(2) + ' ' + c.last_currency"></strong>
+              <span class="muted small"> / [[ c.last_days ]] días</span>
+            </template>
+            <span v-else class="muted">—</span>
+          </dd>
+          <dt>Pagado hasta</dt><dd v-text="c.paid_until || '—'"></dd>
+          <dt>Días</dt><dd v-text="daysText(c)"></dd>
+        </dl>
+        <div class="row">
+          <a class="btn primary" :href="'/billing/' + c.id">Gestionar</a>
+          <form :action="'/users/' + c.id + '/extend'" method="post"
+                class="inline" @submit="confirmExtend($event, c.username)">
+            <input type="hidden" name="days" value="30">
+            <button class="btn">+ 30 d</button>
+          </form>
+        </div>
+      </article>
+    </div>
+  </template>
+
+  <p v-if="!loading && !q && clients.length === 0" class="muted">No hay clientes todavía.</p>
+</div>
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const root = document.getElementById('billing-app');
+  const initialQ = root.dataset.initialQ || '';
+  const REFRESH_MS = 30000;
+
+  const { createApp, ref, computed, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const q = ref(initialQ);
+      const clients = ref([]);
+      let timer = null;
+      let inflight = null;
+
+      const summary = computed(() => {
+        const c = clients.value;
+        if (!c.length) return null;
+        let paid = 0, due = 0, unpaid = 0;
+        for (const x of c) {
+          if (!x.is_paid) unpaid++;
+          else if (x.days_until_due !== null && x.days_until_due <= 7) due++;
+          else paid++;
+        }
+        return { total: c.length, paid, due_soon: due, unpaid };
+      });
+
+      async function fetchData() {
+        if (document.hidden) return;
+        if (inflight) inflight.abort();
+        inflight = new AbortController();
+        const url = '/api/billing' + (q.value ? '?q=' + encodeURIComponent(q.value) : '');
+        try {
+          const r = await fetch(url, { credentials: 'same-origin', signal: inflight.signal });
+          if (!r.ok) return;
+          const d = await r.json();
+          clients.value = d.clients;
+          loading.value = false;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        } finally {
+          inflight = null;
+        }
+      }
+
+      function syncUrl() {
+        const url = new URL(window.location.href);
+        if (q.value) url.searchParams.set('q', q.value);
+        else url.searchParams.delete('q');
+        window.history.replaceState({}, '', url);
+      }
+      function onSearch() { loading.value = true; syncUrl(); fetchData(); }
+      function clearSearch() { q.value = ''; onSearch(); }
+
+      function start() { stop(); fetchData(); timer = setInterval(fetchData, REFRESH_MS); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function onVis() { document.hidden ? stop() : start(); }
+
+      function fullName(c) {
+        return ((c.first_name || '') + ' ' + (c.last_name || '')).trim();
+      }
+      function paymentBadgeLabel(c) {
+        if (!c.is_paid) {
+          const d = c.days_until_due;
+          if (d == null) return 'sin pago';
+          return 'impago (' + Math.abs(d) + ' d)';
+        }
+        const d = c.days_until_due;
+        if (d == null) return 'al día';
+        if (d > 7) return 'al día (' + d + ' d)';
+        if (d > 0) return 'vence en ' + d + ' d';
+        return 'vence hoy';
+      }
+      function paymentBadgeClass(c) {
+        if (!c.is_paid) return 'role-system';
+        const d = c.days_until_due;
+        if (d == null || d > 7) return 'role-admin';
+        return 'role-user';
+      }
+      function daysText(c) {
+        const d = c.days_until_due;
+        if (d == null) return '—';
+        if (d > 0) return d + ' días';
+        if (d === 0) return 'hoy';
+        return 'vencido ' + Math.abs(d) + ' d';
+      }
+      function totalText(c) {
+        const t = c.total_by_currency || {};
+        const parts = Object.entries(t).map(([cur, v]) => v.toFixed(2) + ' ' + cur);
+        return parts.join(' · ');
+      }
+      function confirmExtend(ev, username) {
+        if (!confirm('¿Extender 30 días la cuenta de ' + username + ' (sin cobro)?')) ev.preventDefault();
+      }
+
+      onMounted(() => { start(); document.addEventListener('visibilitychange', onVis); });
+      onBeforeUnmount(() => {
+        stop();
+        document.removeEventListener('visibilitychange', onVis);
+        if (inflight) inflight.abort();
+      });
+
+      return {
+        loading, q, clients, summary,
+        onSearch, clearSearch,
+        fullName, paymentBadgeLabel, paymentBadgeClass, daysText, totalText, confirmExtend,
+      };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#billing-app');
+});
+</script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block; min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%; animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px; color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+</style>
+{% endblock %}

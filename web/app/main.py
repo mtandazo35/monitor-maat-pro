@@ -643,6 +643,75 @@ def api_user_detail(user_id: int, user: dict = Depends(current_admin)):
     )
 
 
+# -------- BILLING (módulo independiente — admin) --------
+
+@app.get("/billing", response_class=HTMLResponse)
+def billing_index(request: Request, q: str = "", user: dict = Depends(current_admin)):
+    return templates.TemplateResponse(
+        "billing.html",
+        {
+            "request": request, "user": user, "q": q,
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.get("/billing/{user_id}", response_class=HTMLResponse)
+def billing_detail(request: Request, user_id: int, user: dict = Depends(current_admin)):
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    if target["role"] == "admin":
+        _flash(request, "Los administradores no requieren facturación.", "info")
+        return RedirectResponse("/billing", status_code=303)
+    return templates.TemplateResponse(
+        "billing_detail.html",
+        {
+            "request": request, "user": user,
+            "target_id": target["id"],
+            "target_username": target["username"],
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.get("/api/billing")
+def api_billing(q: str = "", user: dict = Depends(current_admin)):
+    """Listado de clientes (rol user) con resumen de facturación."""
+    rows = usr.list_users(search=q or None)
+    out = []
+    for r in rows:
+        if r.get("role") == "admin":
+            continue
+        public = _user_public(r)
+        plan = billing.plan_summary(r)
+        public["last_amount"] = plan["last_amount"]
+        public["last_currency"] = plan["last_currency"]
+        public["last_days"] = plan["last_days"]
+        public["has_payments"] = plan["has_payments"]
+        public["total_by_currency"] = plan["total_by_currency"]
+        out.append(public)
+    return JSONResponse({"clients": out, "q": q}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/billing/{user_id}")
+def api_billing_detail(user_id: int, user: dict = Depends(current_admin)):
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    if target["role"] == "admin":
+        raise HTTPException(404)
+    target["tenant_count"] = usr.count_user_tenants(user_id)
+    return JSONResponse(
+        {
+            "user": _user_public(target),
+            "plan": billing.plan_summary(target),
+            "payments": billing.list_payments(user_id),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.post("/users/{user_id}/payments")
 def user_register_payment(
     request: Request,
@@ -662,16 +731,16 @@ def user_register_payment(
         days_i = int(days)
     except ValueError:
         _flash(request, "Monto o días inválidos.", "error")
-        return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+        return RedirectResponse(f"/billing/{user_id}", status_code=303)
     try:
         payment = billing.register_payment(
             user_id, amount=amount_f, days=days_i,
             currency=currency, method=method, notes=notes,
             registered_by=user,
         )
-    except usr.UserError as e:
+    except billing.BillingError as e:
         _flash(request, str(e), "error")
-        return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+        return RedirectResponse(f"/billing/{user_id}", status_code=303)
 
     fresh = usr.get_user(user_id)
     events.log(
@@ -700,7 +769,7 @@ def user_register_payment(
         f"Pago registrado. Cuenta cubierta hasta {payment['covers_until']}.",
         "success",
     )
-    return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+    return RedirectResponse(f"/billing/{user_id}", status_code=303)
 
 
 @app.post("/users/{user_id}/extend")
@@ -718,16 +787,16 @@ def user_quick_extend(
         days_i = int(days)
     except ValueError:
         _flash(request, "Días inválidos.", "error")
-        return RedirectResponse("/users", status_code=303)
+        return RedirectResponse("/billing", status_code=303)
     try:
         payment = billing.register_payment(
             user_id, amount=0.0, days=days_i,
             method="cortesía", notes="Extensión sin pago",
             registered_by=user,
         )
-    except usr.UserError as e:
+    except billing.BillingError as e:
         _flash(request, str(e), "error")
-        return RedirectResponse("/users", status_code=303)
+        return RedirectResponse("/billing", status_code=303)
 
     fresh = usr.get_user(user_id)
     events.log(
@@ -749,7 +818,7 @@ def user_quick_extend(
         f"(hasta {payment['covers_until']}).",
         "success",
     )
-    return RedirectResponse("/users", status_code=303)
+    return RedirectResponse("/billing", status_code=303)
 
 
 @app.get("/users/new", response_class=HTMLResponse)

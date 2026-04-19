@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}{{ target_username }} · Facturación · MonitorMaat{% endblock %}
+{% block content %}
+<link rel="preload" href="/api/billing/{{ target_id }}" as="fetch" crossorigin="use-credentials">
+
+<div class="row between">
+  <h1>Facturación · <code>{{ target_username }}</code></h1>
+  <div class="row">
+    <a href="/billing" class="btn">← Facturación</a>
+    <a href="/users/{{ target_id }}/edit" class="btn">Editar usuario</a>
+  </div>
+</div>
+
+<section id="billing-app"
+         class="card"
+         data-user-id="{{ target_id }}"
+         data-username="{{ target_username }}"
+         v-cloak>
+  <h2 class="form-section">Estado del cliente</h2>
+
+  <div v-if="loading" class="muted"><span class="sk-inline" style="min-width:8em"></span></div>
+
+  <template v-else-if="userInfo">
+    <dl class="grid">
+      <dt>Estado</dt>
+      <dd>
+        <span class="role-pill" :class="statusClass" v-text="statusLabel"></span>
+      </dd>
+      <dt>Pagado hasta</dt>
+      <dd v-text="userInfo.paid_until || '—'"></dd>
+      <dt>Días restantes</dt>
+      <dd v-text="daysText"></dd>
+      <dt v-if="plan && plan.has_payments">Plan actual</dt>
+      <dd v-if="plan && plan.has_payments">
+        <strong v-text="plan.last_amount.toFixed(2) + ' ' + plan.last_currency"></strong>
+        / [[ plan.last_days ]] día[[ plan.last_days === 1 ? '' : 's' ]]
+        <div class="muted small">según el último pago registrado</div>
+      </dd>
+      <dt v-if="plan && Object.keys(plan.total_by_currency).length > 0">Total cobrado</dt>
+      <dd v-if="plan && Object.keys(plan.total_by_currency).length > 0">
+        <span v-for="(v, c, i) in plan.total_by_currency" :key="c">
+          <strong v-text="v.toFixed(2) + ' ' + c"></strong><span v-if="!isLast(i)"> · </span>
+        </span>
+      </dd>
+    </dl>
+  </template>
+</section>
+
+<section id="register-payment-app" class="card" data-user-id="{{ target_id }}" v-cloak>
+  <h2 class="form-section">Registrar pago</h2>
+  <form :action="'/users/' + userId + '/payments'" method="post" @submit="onPaymentSubmit">
+    <div class="form-grid-2">
+      <label>Monto
+        <input name="amount" type="number" min="0" step="0.01" v-model="payAmount" required>
+      </label>
+      <label>Moneda
+        <select name="currency" v-model="payCurrency">
+          <option>USD</option>
+          <option>EUR</option>
+          <option>ARS</option>
+          <option>COP</option>
+          <option>MXN</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-grid-2">
+      <label>Días que cubre
+        <input name="days" type="number" min="1" v-model="payDays" required>
+      </label>
+      <label>Método
+        <input name="method" v-model="payMethod" placeholder="transferencia, efectivo, payphone…" maxlength="40">
+      </label>
+    </div>
+    <label>Notas
+      <input name="notes" v-model="payNotes" placeholder="comprobante #, observaciones…" maxlength="200">
+    </label>
+    <p class="muted" style="font-size:.85rem;margin:-4px 0 10px">
+      Cubrirá hasta <strong v-text="previewCoversUntil"></strong>.
+    </p>
+    <div class="row">
+      <button type="submit" class="primary" :disabled="!payAmount || !payDays">Registrar pago</button>
+    </div>
+  </form>
+
+  <hr style="border-color:var(--border);margin:18px 0">
+  <h3 class="form-section">Cortesía / extensión sin pago</h3>
+  <form :action="'/users/' + userId + '/extend'" method="post" @submit="confirmExtend" class="row">
+    <input name="days" type="number" min="1" value="30" style="max-width:8em">
+    <button type="submit" class="btn">+ Extender (sin cobro)</button>
+  </form>
+</section>
+
+<section id="payments-history-app" class="card" data-user-id="{{ target_id }}" v-cloak>
+  <h2 class="form-section">Historial de pagos</h2>
+  <p v-if="loading" class="muted"><span class="sk-inline" style="min-width:6em"></span></p>
+  <p v-else-if="payments.length === 0" class="muted">Sin pagos registrados todavía.</p>
+  <div v-else class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Fecha</th><th>Monto</th><th>Días</th><th>Cubrió hasta</th><th>Método</th><th>Notas</th><th>Cargado por</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="p in payments" :key="p.id">
+          <td class="muted small" v-text="formatTs(p.paid_at)"></td>
+          <td>
+            <strong v-text="p.amount.toFixed(2) + ' ' + p.currency"></strong>
+            <span v-if="p.amount === 0" class="muted small"> (cortesía)</span>
+          </td>
+          <td v-text="p.days"></td>
+          <td v-text="p.covers_until"></td>
+          <td v-text="p.method || '—'"></td>
+          <td class="muted small" v-text="p.notes || ''"></td>
+          <td class="muted small" v-text="p.registered_by_username || '—'"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
+<script defer>
+window.addEventListener('DOMContentLoaded', () => {
+  const stateRoot = document.getElementById('billing-app');
+  const formRoot = document.getElementById('register-payment-app');
+  const histRoot = document.getElementById('payments-history-app');
+  const userId = stateRoot.dataset.userId;
+  const username = stateRoot.dataset.username;
+  const TZ = 'America/Guayaquil';
+  const tsFmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  function todayLocal() {
+    const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const parts = fmt.formatToParts(new Date());
+    const get = t => parts.find(p => p.type === t).value;
+    return new Date(`${get('year')}-${get('month')}-${get('day')}T00:00:00Z`);
+  }
+
+  // Estado compartido entre las 3 apps
+  const shared = {
+    loading: true,
+    userInfo: null,
+    plan: null,
+    payments: [],
+    paidUntil: null,
+  };
+
+  async function fetchData() {
+    try {
+      const r = await fetch('/api/billing/' + userId, { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const d = await r.json();
+      shared.userInfo = d.user;
+      shared.plan = d.plan;
+      shared.payments = d.payments;
+      shared.paidUntil = d.user.paid_until;
+      // Notifico a los 3 apps
+      document.dispatchEvent(new CustomEvent('billing:loaded'));
+    } finally {
+      shared.loading = false;
+      document.dispatchEvent(new CustomEvent('billing:done'));
+    }
+  }
+
+  const { createApp, ref, computed, onMounted } = Vue;
+
+  // App 1: estado
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const userInfo = ref(null);
+      const plan = ref(null);
+
+      function refresh() {
+        userInfo.value = shared.userInfo;
+        plan.value = shared.plan;
+      }
+      document.addEventListener('billing:loaded', refresh);
+      document.addEventListener('billing:done', () => { loading.value = false; refresh(); });
+
+      const statusLabel = computed(() => {
+        if (!userInfo.value) return '—';
+        const d = userInfo.value.days_until_due;
+        if (userInfo.value.is_paid) {
+          if (d === null || d === undefined) return 'al día';
+          if (d > 7) return 'al día';
+          if (d > 0) return `vence en ${d} d`;
+          return 'vence hoy';
+        }
+        const overdue = d != null ? Math.abs(d) : 0;
+        return `impago (hace ${overdue} d)`;
+      });
+      const statusClass = computed(() => {
+        if (!userInfo.value) return '';
+        if (!userInfo.value.is_paid) return 'role-system';
+        const d = userInfo.value.days_until_due;
+        if (d === null || d === undefined || d > 7) return 'role-admin';
+        return 'role-user';
+      });
+      const daysText = computed(() => {
+        if (!userInfo.value) return '—';
+        const d = userInfo.value.days_until_due;
+        if (d === null || d === undefined) return '—';
+        return d > 0 ? `${d} días` : (d === 0 ? 'vence hoy' : `vencido hace ${Math.abs(d)} d`);
+      });
+
+      function isLast(i) { return i === Object.keys(plan.value?.total_by_currency || {}).length - 1; }
+
+      return { loading, userInfo, plan, statusLabel, statusClass, daysText, isLast };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#billing-app');
+
+  // App 2: registrar pago
+  createApp({
+    setup() {
+      const userIdRef = userId;
+      const payAmount = ref('');
+      const payCurrency = ref('USD');
+      const payDays = ref(30);
+      const payMethod = ref('');
+      const payNotes = ref('');
+
+      const previewCoversUntil = computed(() => {
+        const days = Number(payDays.value) || 0;
+        if (days <= 0) return '—';
+        const today = todayLocal();
+        let base = today;
+        if (shared.paidUntil) {
+          const cur = new Date(shared.paidUntil + 'T00:00:00Z');
+          if (cur > today) base = cur;
+        }
+        const next = new Date(base.getTime() + days * 86400000);
+        return next.toISOString().slice(0, 10);
+      });
+
+      function onPaymentSubmit(ev) {
+        if (Number(payAmount.value) < 0 || Number(payDays.value) <= 0) ev.preventDefault();
+      }
+      function confirmExtend(ev) {
+        if (!confirm('¿Extender la cuenta de ' + username + ' sin cobro?')) ev.preventDefault();
+      }
+
+      return {
+        userId: userIdRef, payAmount, payCurrency, payDays, payMethod, payNotes,
+        previewCoversUntil, onPaymentSubmit, confirmExtend,
+      };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#register-payment-app');
+
+  // App 3: historial
+  createApp({
+    setup() {
+      const loading = ref(true);
+      const payments = ref([]);
+
+      function refresh() { payments.value = shared.payments; }
+      document.addEventListener('billing:loaded', refresh);
+      document.addEventListener('billing:done', () => { loading.value = false; refresh(); });
+
+      function formatTs(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return ts;
+        return tsFmt.format(d).replace('T', ' ');
+      }
+      return { loading, payments, formatTs };
+    },
+    delimiters: ['[[', ']]'],
+  }).mount('#payments-history-app');
+
+  fetchData();
+});
+</script>
+
+<style>
+  [v-cloak] { visibility: hidden; }
+  .sk-inline {
+    display: inline-block; min-height: 1em;
+    background: linear-gradient(90deg, var(--sk-base, rgba(255,255,255,0.07)) 25%, var(--sk-hi, rgba(255,255,255,0.14)) 50%, var(--sk-base, rgba(255,255,255,0.07)) 75%);
+    background-size: 200% 100%; animation: sk-shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px; color: transparent;
+  }
+  html.theme-light .sk-inline { --sk-base: rgba(0,0,0,0.06); --sk-hi: rgba(0,0,0,0.12); }
+  @keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+</style>
+{% endblock %}
