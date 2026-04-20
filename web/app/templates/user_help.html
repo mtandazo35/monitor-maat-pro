@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Manual · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>📖 Manual de uso</h1>
+</div>
+
+<section class="card">
+  <h2 class="form-section">Bienvenida</h2>
+  <p>Hola <strong>{{ user.username }}</strong>. Este manual te explica todo lo que podés hacer (y lo que no podés) dentro de tu panel MonitorMaat.</p>
+  <p class="muted small">Si algo no te queda claro, contactá al administrador del servicio.</p>
+</section>
+
+<section class="card">
+  <h2 class="form-section">Índice</h2>
+  <ol class="help-toc">
+    <li><a href="#dashboard">Tu Dashboard</a></li>
+    <li><a href="#tenants">Tus tenants (servicios)</a></li>
+    <li><a href="#vpn-users">Crear usuarios VPN</a></li>
+    <li><a href="#kuma">Tu Uptime Kuma</a></li>
+    <li><a href="#billing">Mi suscripción y pagos</a></li>
+    <li><a href="#telegram">Mi Telegram (notificaciones)</a></li>
+    <li><a href="#logs">Mis logs</a></li>
+    <li><a href="#account">Mi cuenta</a></li>
+    <li><a href="#cant">Lo que NO podés hacer</a></li>
+    <li><a href="#help">¿Necesitás ayuda?</a></li>
+  </ol>
+</section>
+
+<section id="dashboard" class="card">
+  <h2 class="form-section">1. Tu Dashboard <code>/</code></h2>
+  <p>Al entrar al panel ves un resumen con tus tenants, su estado (encendidos / apagados / con problema) y accesos rápidos.</p>
+</section>
+
+<section id="tenants" class="card">
+  <h2 class="form-section">2. Tus tenants (servicios) <code>/tenants</code></h2>
+  <p>Un <strong>tenant</strong> es un servicio independiente que contiene <strong>OpenVPN</strong> + <strong>Uptime Kuma</strong>. Cada tenant tiene su propia red VPN, sus propios usuarios y monitores.</p>
+  <h3 class="form-section">Crear un tenant nuevo</h3>
+  <ul>
+    <li>Tu cuenta tiene una <strong>cuota</strong> de tenants máximos. La ves arriba del listado: <code>X / Y usados</code>.</li>
+    <li>Para crear hace falta tener <strong>plan asignado</strong> y estar <strong>al día con el pago</strong>. Si no, el botón aparece pero la creación se bloquea.</li>
+    <li>El nombre debe ser solo minúsculas, números y guión (ej: <code>oficina-quito</code>).</li>
+  </ul>
+  <h3 class="form-section">Administrar un tenant</h3>
+  <ul>
+    <li><strong>Resumen</strong>: estado de OpenVPN y Kuma, dominio asignado (si tenés), IP pública, subred VPN.</li>
+    <li><strong>Arrancar / Detener / Reiniciar</strong>: controlás el ciclo de vida de los contenedores.</li>
+    <li><strong>Eliminar</strong>: borra el tenant y todos sus datos (incluye monitores de Kuma y certificados VPN). <strong>Esto no se puede deshacer.</strong></li>
+  </ul>
+</section>
+
+<section id="vpn-users" class="card">
+  <h2 class="form-section">3. Crear usuarios VPN dentro de un tenant</h2>
+  <p>Un <strong>usuario VPN</strong> es la credencial que se conecta al OpenVPN del tenant — por ejemplo, un Mikrotik en una sucursal o tu laptop.</p>
+  <ul>
+    <li>Dentro del tenant, sección <strong>Usuarios VPN</strong>, click en <em>Crear usuario</em>.</li>
+    <li>Se descarga un archivo <code>.ovpn</code> que contiene el certificado y la configuración. <strong>Guardalo bien</strong>: solo se puede descargar al momento de la creación.</li>
+    <li>Importalo en cualquier cliente OpenVPN (Mikrotik, Windows, Linux, Android…).</li>
+  </ul>
+  <h3 class="form-section">Asignar redes</h3>
+  <p>A cada usuario VPN podés asignarle una o varias <strong>subredes</strong> (ej: <code>192.168.1.0/24</code>) que se ruteen por su túnel. Útil cuando del otro lado hay un router con LAN propia y querés llegar a esos hosts desde Kuma.</p>
+</section>
+
+<section id="kuma" class="card">
+  <h2 class="form-section">4. Tu Uptime Kuma</h2>
+  <p>Cada tenant trae un Uptime Kuma propio, accesible desde la página del tenant (link "Kuma ↗"). Allí podés:</p>
+  <ul>
+    <li>Crear monitores HTTP, ping, TCP, etc. para los hosts dentro de la VPN.</li>
+    <li>Configurar avisos por correo, Telegram, Slack, Discord, etc.</li>
+    <li>Crear status pages públicas.</li>
+  </ul>
+  <p class="flash flash-info" style="margin:10px 0 0">
+    💡 La primera vez que entrás a Kuma te pide crear el usuario admin de Kuma. Esa cuenta es <strong>solo para Kuma</strong>, no es tu usuario del panel MonitorMaat.
+  </p>
+</section>
+
+<section id="billing" class="card">
+  <h2 class="form-section">5. Mi suscripción y pagos <code>/me/billing</code></h2>
+  <p>Acá ves el estado de tu cuenta:</p>
+  <ul>
+    <li><strong>Al día</strong>: tu cuenta está activa y podés crear / gestionar tenants normalmente.</li>
+    <li><strong>Vence pronto</strong>: faltan menos de 7 días para el corte. Renová antes de la fecha.</li>
+    <li><strong>Vence hoy</strong>: hoy a la hora de corte (Ecuador) se suspende si no pagás.</li>
+    <li><strong>Impago</strong>: tu cuenta está suspendida — no podés crear nuevos tenants. Renová para reactivar.</li>
+  </ul>
+  <h3 class="form-section">Pagar con PayPhone</h3>
+  <p>Si el admin habilitó PayPhone y te asignó un plan, vas a ver una tarjeta con el plan y un botón <strong>"Pagar con PayPhone"</strong>. Hacé click, completás el pago con tarjeta y volvés al panel — la cuenta se renueva automáticamente.</p>
+  <h3 class="form-section">Historial de pagos</h3>
+  <p>Tabla paginada con todos tus pagos (fecha, monto, días que cubrió, método y estado). Si ves <em>cortesía</em> es un día de extensión que te dio el admin sin cobrarte.</p>
+  <p class="flash flash-info" style="margin:10px 0 0">
+    💡 ¿No tenés plan asignado? Contactá al administrador para que te asigne el plan correcto. Sin plan, no podés pagar con PayPhone ni crear nuevos tenants.
+  </p>
+</section>
+
+<section id="telegram" class="card">
+  <h2 class="form-section">6. Mi Telegram <code>/me/telegram</code></h2>
+  <p>Vinculá tu cuenta de Telegram para recibir avisos automáticos del sistema (ej: caída de un monitor, vencimiento de pago).</p>
+  <ol>
+    <li>Buscá el bot indicado en la página y mandale <code>/start</code>.</li>
+    <li>El bot te da un código que pegás en el panel.</li>
+    <li>Activás los tipos de notificación que querés recibir.</li>
+    <li>Botón <strong>Probar</strong>: te manda un mensaje para confirmar que funciona.</li>
+  </ol>
+</section>
+
+<section id="logs" class="card">
+  <h2 class="form-section">7. Mis logs <code>/me/logs</code></h2>
+  <p>Registro de eventos relacionados con tu cuenta y tus servicios:</p>
+  <ul>
+    <li>Tus inicios y cierres de sesión.</li>
+    <li>Creación, modificación o eliminación de tus tenants.</li>
+    <li>Alta y baja de usuarios VPN.</li>
+    <li>Pagos registrados / cortesías recibidas.</li>
+  </ul>
+  <p>Listado paginado (10/15/20/50/100). La preferencia se guarda en tu navegador.</p>
+</section>
+
+<section id="account" class="card">
+  <h2 class="form-section">8. Mi cuenta <code>/change-password</code></h2>
+  <ul>
+    <li><strong>Cambiar contraseña</strong>: requiere la actual para validar.</li>
+    <li>Si olvidaste la contraseña, contactá al admin para que te genere una nueva (te llegará por correo o te la dará directamente).</li>
+  </ul>
+  <p class="muted small">Te recomendamos: contraseña de 12+ caracteres, no la compartas, no la repitas en otros sitios.</p>
+</section>
+
+<section id="cant" class="card">
+  <h2 class="form-section">9. Lo que NO podés hacer</h2>
+  <p>Tu rol es <strong>cliente</strong>. Estas acciones son exclusivas del administrador:</p>
+  <ul>
+    <li>Ver o modificar otros clientes ni sus tenants.</li>
+    <li>Cambiar tu plan, tu cuota o tu fecha de corte (eso lo hace el admin).</li>
+    <li>Configurar PayPhone, SMTP, Telegram global, planes o dominios.</li>
+    <li>Ver los logs globales del sistema (solo ves los tuyos).</li>
+    <li>Crear tenants si no tenés plan asignado, si estás impago o si llegaste a tu cuota.</li>
+    <li>Eliminar tu propia cuenta del panel.</li>
+  </ul>
+</section>
+
+<section id="help" class="card">
+  <h2 class="form-section">10. ¿Necesitás ayuda?</h2>
+  <p>Si tenés un problema o duda que este manual no resuelve:</p>
+  <ul>
+    <li>Revisá el estado de tu suscripción en <a href="/me/billing">Mi suscripción</a>.</li>
+    <li>Mirá tus eventos recientes en <a href="/me/logs">Mis logs</a>.</li>
+    <li>Contactá al administrador de tu servicio MonitorMaat.</li>
+  </ul>
+</section>
+
+<style>
+  .help-toc { line-height: 1.8; }
+  .help-toc a { text-decoration: none; }
+  .help-toc a:hover { text-decoration: underline; }
+  section[id] { scroll-margin-top: 20px; }
+  section h3.form-section { margin-top: 18px; font-size: .95rem; }
+</style>
+{% endblock %}

@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Manual del administrador · MonitorMaat{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>📖 Manual del administrador</h1>
+</div>
+
+<section class="card">
+  <h2 class="form-section">Índice</h2>
+  <ol class="help-toc">
+    <li><a href="#intro">Qué es MonitorMaat</a></li>
+    <li><a href="#dashboard">Dashboard</a></li>
+    <li><a href="#tenants">Tenants (servicios)</a></li>
+    <li><a href="#vpn-users">Usuarios VPN dentro de un tenant</a></li>
+    <li><a href="#users">Usuarios del panel (clientes)</a></li>
+    <li><a href="#billing">Facturación</a></li>
+    <li><a href="#plans">Planes de suscripción</a></li>
+    <li><a href="#network">Red y dominios</a></li>
+    <li><a href="#payphone">PayPhone (cobro automático)</a></li>
+    <li><a href="#smtp">SMTP (correo saliente)</a></li>
+    <li><a href="#telegram">Bot Telegram (notificaciones)</a></li>
+    <li><a href="#logs">Logs / Auditoría</a></li>
+    <li><a href="#account">Tu cuenta admin</a></li>
+    <li><a href="#troubleshooting">Solución de problemas comunes</a></li>
+  </ol>
+</section>
+
+<section id="intro" class="card">
+  <h2 class="form-section">1. Qué es MonitorMaat</h2>
+  <p>MonitorMaat es un panel multi‑tenant que despliega y administra servicios de <strong>OpenVPN + Uptime Kuma</strong> dentro de contenedores Docker, uno por cliente. Cada cliente tiene su propio tenant aislado, con su red VPN, sus usuarios VPN, su Uptime Kuma con monitores y su facturación.</p>
+  <p class="muted small">Como admin podés crear y administrar todo el sistema. Los clientes solo ven lo suyo.</p>
+</section>
+
+<section id="dashboard" class="card">
+  <h2 class="form-section">2. Dashboard <code>/</code></h2>
+  <p>Muestra métricas en vivo del host: CPU, RAM, disco, número de tenants, usuarios y estado de los contenedores. Se refresca cada pocos segundos automáticamente.</p>
+</section>
+
+<section id="tenants" class="card">
+  <h2 class="form-section">3. Tenants (servicios) <code>/tenants</code></h2>
+  <p>Cada tenant es un servicio independiente con su par <strong>OpenVPN + Kuma</strong>. Listado paginado (10/15/20/50/100), buscable por nombre, dueño o empresa.</p>
+  <h3 class="form-section">Crear tenant <code>/tenants/new</code></h3>
+  <ul>
+    <li><strong>Nombre</strong>: solo minúsculas, números y guión. Empieza con letra. Ej: <code>maat</code>, <code>cliente-1</code>.</li>
+    <li>El sistema asigna automáticamente puerto VPN (1194, 1195…), puerto Kuma (3001, 3002…) y subred (100.64.X.0/24).</li>
+    <li>Al crear se levantan ambos contenedores y queda el tenant accesible.</li>
+  </ul>
+  <h3 class="form-section">Vista de un tenant <code>/tenants/&lt;nombre&gt;</code></h3>
+  <ul>
+    <li><strong>Resumen</strong>: estado de OpenVPN y Kuma, dominio asignado, IP pública, subred VPN.</li>
+    <li><strong>Acciones</strong>: arrancar / detener / reiniciar contenedores; eliminar tenant (zona peligrosa).</li>
+    <li><strong>Usuarios VPN</strong>: alta de usuarios OpenVPN con descarga de <code>.ovpn</code>, asignación de subredes y baja.</li>
+    <li><strong>Kuma</strong>: link directo al panel Uptime Kuma del tenant (con dominio si está configurado, IP+puerto si no).</li>
+  </ul>
+  <p class="flash flash-info" style="margin:10px 0 0">
+    💡 Si activaste un dominio wildcard en <a href="/settings/network">Red y dominios</a>, los Kuma de los tenants quedan accesibles vía <code>tenant.tu-dominio.com</code> con HTTPS automático.
+  </p>
+</section>
+
+<section id="vpn-users" class="card">
+  <h2 class="form-section">4. Usuarios VPN dentro de un tenant</h2>
+  <p>Un <strong>usuario VPN</strong> es una credencial que se conecta al OpenVPN del tenant. NO es un usuario del panel.</p>
+  <ul>
+    <li><strong>Crear</strong>: nombre + descarga del <code>.ovpn</code> listo para importar en cualquier cliente OpenVPN.</li>
+    <li><strong>Redes</strong>: a cada usuario VPN podés asociarle una o varias subredes (ej: <code>192.168.1.0/24</code>) que se ruteen por su túnel — útil para Mikrotik / sucursales.</li>
+    <li><strong>Eliminar</strong>: revoca el certificado y borra las rutas. La conexión activa se cae.</li>
+  </ul>
+</section>
+
+<section id="users" class="card">
+  <h2 class="form-section">5. Usuarios del panel (clientes) <code>/users</code></h2>
+  <p>Aquí gestionás las cuentas de tus clientes que entran al panel.</p>
+  <ul>
+    <li><strong>Crear usuario</strong>: username, email, password, empresa, cuota de tenants, plan opcional.</li>
+    <li><strong>Editar</strong>: cambiar email, empresa, cuota.</li>
+    <li><strong>Reset de contraseña</strong>: genera una nueva password aleatoria y la muestra una sola vez.</li>
+    <li><strong>Desactivar</strong>: bloquea el login. Si el usuario está logueado en ese momento, lo bota del panel.</li>
+    <li><strong>Eliminar</strong>: borra la cuenta. <strong>No</strong> borra sus tenants (los podés transferir o eliminar a mano antes).</li>
+  </ul>
+  <p class="muted small">Los admins NO requieren plan ni facturación.</p>
+</section>
+
+<section id="billing" class="card">
+  <h2 class="form-section">6. Facturación <code>/billing</code></h2>
+  <p>Listado de clientes con su estado de pago. Columnas:</p>
+  <ul>
+    <li><strong>Pago</strong>: ✅ Pagado / ❌ Impago según <code>paid_until</code> y la hora de suspensión.</li>
+    <li><strong>Valor a cobrar</strong>: precio del plan asignado al cliente.</li>
+    <li><strong>Días para corte</strong>: cuántos días faltan hasta que se le suspenda la cuenta.</li>
+    <li><strong>Acciones</strong>: <em>Gestionar</em> (entra al detalle) y <em>Registrar pago</em> (modal flotante con el monto del plan ya prellenado).</li>
+  </ul>
+  <h3 class="form-section">Detalle de cliente <code>/billing/&lt;user_id&gt;</code></h3>
+  <ul>
+    <li><strong>Estado del cliente</strong>: días restantes, plan vigente, total cobrado por moneda.</li>
+    <li><strong>Asignar plan</strong>: hasta que el cliente no tenga plan asignado, NO puede crear tenants ni pagar con PayPhone.</li>
+    <li><strong>Cortesía (ajustar días)</strong>: número positivo extiende, negativo reduce. Si la resta cae antes de hoy, queda en hoy. <strong>No</strong> requiere confirmación: aplica directo.</li>
+    <li><strong>Historial de pagos</strong>: paginado, con fecha, monto, días cubiertos, método y operador.</li>
+  </ul>
+  <p class="flash flash-info" style="margin:10px 0 0">
+    💡 La hora exacta a la que se suspenden las cuentas que vencen ese día se configura en <a href="/settings/plans">Planes</a> (zona horaria Ecuador, UTC‑5).
+  </p>
+</section>
+
+<section id="plans" class="card">
+  <h2 class="form-section">7. Planes de suscripción <code>/settings/plans</code></h2>
+  <ul>
+    <li><strong>Hora de suspensión</strong>: hora del día (HH:MM, Ecuador) a la que se cortan las cuentas vencidas.</li>
+    <li><strong>Crear plan</strong>: nombre, descripción, precio, moneda (USD/EUR), días de cobertura, orden, activo sí/no.</li>
+    <li><strong>Activo</strong>: si está marcado, el plan aparece en el selector de "Asignar plan al cliente". Si lo desactivás, queda guardado pero <strong>no se puede asignar a clientes nuevos</strong>. Los que ya lo tienen asignado siguen pagándolo.</li>
+    <li><strong>Editar</strong>: tabla inline. Cambiá precio, días, orden, etc.</li>
+    <li><strong>Borrar</strong>: si el plan tiene pagos asociados queda solo desactivado (no se borra para preservar histórico).</li>
+  </ul>
+</section>
+
+<section id="network" class="card">
+  <h2 class="form-section">8. Red y dominios <code>/settings/network</code></h2>
+  <p>Acá configurás los dominios para HTTPS automático con <strong>Caddy + Let's Encrypt</strong>:</p>
+  <ul>
+    <li><strong>Dominio del panel</strong>: ej. <code>panel.tudominio.com</code> apunta al MonitorMaat.</li>
+    <li><strong>Dominio wildcard de tenants</strong>: ej. <code>*.tudominio.com</code>. Cada tenant queda servido vía <code>nombre-tenant.tudominio.com</code>.</li>
+    <li><strong>Email Let's Encrypt</strong>: para los certificados.</li>
+    <li><strong>SSL automático</strong>: Caddy renueva los certs solo, no hay que tocar nada.</li>
+  </ul>
+  <p>Para ver el Caddyfile generado, usá <code>/settings/network/caddyfile</code>.</p>
+  <p class="flash flash-error" style="margin:10px 0 0">
+    ⚠ El DNS wildcard debe apuntar a la IP pública del server <strong>antes</strong> de activar HTTPS, sino Let's Encrypt falla.
+  </p>
+</section>
+
+<section id="payphone" class="card">
+  <h2 class="form-section">9. PayPhone <code>/settings/payphone</code></h2>
+  <p>Pasarela de pago para cobrar a los clientes con tarjeta. Configurá:</p>
+  <ul>
+    <li><strong>Token</strong> de la cuenta PayPhone.</li>
+    <li><strong>Store ID</strong> del comercio.</li>
+    <li><strong>URL pública</strong> del panel: necesaria para los callbacks de retorno.</li>
+  </ul>
+  <p>Una vez configurado, los clientes con plan asignado ven el botón "Pagar con PayPhone" en su sección de suscripción. El IVA Ecuador (15%) se calcula automáticamente.</p>
+</section>
+
+<section id="smtp" class="card">
+  <h2 class="form-section">10. SMTP <code>/settings/smtp</code></h2>
+  <p>Correo saliente para resets de contraseña, avisos de pago y notificaciones críticas. Configurá host, puerto, usuario, password, remitente y TLS. Botón <strong>Probar envío</strong> manda un correo de prueba a la dirección que indiques.</p>
+</section>
+
+<section id="telegram" class="card">
+  <h2 class="form-section">11. Bot Telegram <code>/settings/telegram</code></h2>
+  <p>Bot global del sistema. Permite enviar alertas a los admins y a los clientes que vinculen su cuenta.</p>
+  <ul>
+    <li><strong>Token del bot</strong> (lo das de alta con @BotFather en Telegram).</li>
+    <li><strong>Chat ID admin</strong>: el grupo o usuario que recibe alertas críticas.</li>
+    <li><strong>Probar</strong>: envía un mensaje al chat configurado.</li>
+  </ul>
+</section>
+
+<section id="logs" class="card">
+  <h2 class="form-section">12. Logs / Auditoría <code>/logs</code></h2>
+  <p>Registro inmutable de cada acción significativa. Filtrable por:</p>
+  <ul>
+    <li><strong>Origen</strong>: Sistema / Admin / Clientes.</li>
+    <li><strong>Categoría</strong>: auth, user, tenant, vpn_user, network, system, settings.</li>
+    <li><strong>Búsqueda libre</strong>: por usuario, tenant, acción o detalle.</li>
+  </ul>
+  <p>Listado paginado (10/15/20/50/100). La preferencia de tamaño se guarda en tu navegador.</p>
+</section>
+
+<section id="account" class="card">
+  <h2 class="form-section">13. Tu cuenta admin <code>/change-password</code></h2>
+  <p>Cambiar tu contraseña. Te recomendamos:</p>
+  <ul>
+    <li>Usar una contraseña fuerte (12+ caracteres, sin diccionario).</li>
+    <li>Si compartís el panel con otro admin, creá una cuenta admin separada para él (no compartas credenciales).</li>
+  </ul>
+</section>
+
+<section id="troubleshooting" class="card">
+  <h2 class="form-section">14. Solución de problemas comunes</h2>
+  <dl class="grid">
+    <dt>Cliente no puede crear tenants</dt>
+    <dd>Verificá: 1) tiene plan asignado, 2) está al día con el pago, 3) no superó su cuota de tenants. Todo en <code>/billing/&lt;id&gt;</code>.</dd>
+
+    <dt>Tenant aparece en estado "missing"</dt>
+    <dd>El contenedor no existe. Mirá la página del tenant y usá <strong>Arrancar</strong>. Si falla, revisá los logs del host.</dd>
+
+    <dt>Kuma del tenant no abre con HTTPS</dt>
+    <dd>Verificá que el wildcard DNS apunte al server y que Caddy esté corriendo. Mirá <code>/settings/network/caddyfile</code>.</dd>
+
+    <dt>PayPhone devuelve error después de pagar</dt>
+    <dd>Confirmá que la URL pública en <a href="/settings/payphone">PayPhone</a> matchee EXACTAMENTE al dominio por donde entró el cliente (HTTPS si aplica). El callback necesita llegar de vuelta.</dd>
+
+    <dt>El cliente no recibe correo</dt>
+    <dd>Probá el envío en <a href="/settings/smtp">SMTP</a>. Verificá SPF/DKIM si tu proveedor de correo los exige.</dd>
+  </dl>
+</section>
+
+<style>
+  .help-toc { line-height: 1.8; }
+  .help-toc a { text-decoration: none; }
+  .help-toc a:hover { text-decoration: underline; }
+  section[id] { scroll-margin-top: 20px; }
+  section h3.form-section { margin-top: 18px; font-size: .95rem; }
+  section dl.grid { display: grid; grid-template-columns: minmax(200px, 1fr) 2fr; gap: 8px 16px; }
+  section dl.grid dt { font-weight: 600; color: var(--text); }
+  section dl.grid dd { color: var(--muted); margin: 0; }
+  @media (max-width: 600px) {
+    section dl.grid { grid-template-columns: 1fr; }
+    section dl.grid dt { margin-top: 8px; }
+  }
+</style>
+{% endblock %}

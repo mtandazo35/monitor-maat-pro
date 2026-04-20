@@ -1904,3 +1904,23 @@ def api_logs_me(
         },
         headers={"Cache-Control": "no-store"},
     )
+
+
+# -------- MANUALES (HELP) --------
+
+@app.get("/help", response_class=HTMLResponse)
+def admin_help(request: Request, user: dict = Depends(current_admin)):
+    return templates.TemplateResponse(
+        "admin_help.html",
+        {"request": request, "user": user, "flash": _pop_flash(request)},
+    )
+
+
+@app.get("/me/help", response_class=HTMLResponse)
+def user_help(request: Request, user: dict = Depends(current_user)):
+    if user["role"] == "admin":
+        return RedirectResponse("/help", status_code=303)
+    return templates.TemplateResponse(
+        "user_help.html",
+        {"request": request, "user": user, "flash": _pop_flash(request)},
+    )
