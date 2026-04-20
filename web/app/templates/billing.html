@@ -53,13 +53,13 @@
     <table class="tbl">
       <thead>
         <tr>
-          <th>Cliente</th><th>Empresa</th><th>Estado</th><th>Plan</th>
-          <th>Pagado hasta</th><th>Días</th><th>Total</th><th></th>
+          <th>Cliente</th><th>Empresa</th><th>Pago</th><th>Estado</th><th>Plan</th>
+          <th>Pagado hasta</th><th>Días para corte</th><th>Valor a cobrar</th><th>Acciones</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="n in 4" :key="n">
-          <td v-for="c in 8" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+          <td v-for="c in 9" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
         </tr>
       </tbody>
     </table>
@@ -72,40 +72,49 @@
           <tr>
             <th>Cliente</th>
             <th>Empresa</th>
+            <th>Pago</th>
             <th>Estado</th>
             <th>Plan asignado</th>
             <th>Pagado hasta</th>
-            <th>Días</th>
-            <th>Total cobrado</th>
-            <th></th>
+            <th>Días para corte</th>
+            <th>Valor a cobrar</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="c in clients" :key="c.id">
-            <td>
+            <td style="vertical-align:middle">
               <a :href="'/billing/' + c.id"><strong v-text="c.username"></strong></a>
               <div v-if="fullName(c)" class="muted small" v-text="fullName(c)"></div>
             </td>
-            <td v-text="c.company_name || '—'"></td>
-            <td>
+            <td style="vertical-align:middle" v-text="c.company_name || '—'"></td>
+            <td style="vertical-align:middle">
+              <span class="role-pill" :class="c.is_paid ? 'role-admin' : 'role-system'"
+                    v-text="c.is_paid ? '✅ Pagado' : '❌ Impago'"></span>
+            </td>
+            <td style="vertical-align:middle">
               <span class="role-pill" :class="paymentBadgeClass(c)" v-text="paymentBadgeLabel(c)"></span>
             </td>
-            <td>
+            <td style="vertical-align:middle">
               <template v-if="c.assigned_plan">
                 <strong v-text="c.assigned_plan.name"></strong>
-                <div class="muted small" v-text="c.assigned_plan.price.toFixed(2) + ' ' + c.assigned_plan.currency + ' / ' + c.assigned_plan.days + 'd'"></div>
+                <div class="muted small" v-text="c.assigned_plan.days + ' días'"></div>
               </template>
               <span v-else class="muted small" style="color:#f59e0b">⚠ sin plan</span>
             </td>
-            <td v-text="c.paid_until || '—'"></td>
-            <td v-text="daysText(c)"></td>
-            <td>
-              <span v-if="totalText(c)" v-text="totalText(c)"></span>
+            <td style="vertical-align:middle" v-text="c.paid_until || '—'"></td>
+            <td style="vertical-align:middle" v-text="daysText(c)"></td>
+            <td style="vertical-align:middle">
+              <template v-if="c.assigned_plan">
+                <strong v-text="c.assigned_plan.price.toFixed(2) + ' ' + c.assigned_plan.currency"></strong>
+              </template>
               <span v-else class="muted">—</span>
             </td>
-            <td class="row" style="gap:6px;flex-wrap:nowrap">
-              <a class="btn small" :href="'/billing/' + c.id">Gestionar</a>
-              <button type="button" class="btn small primary" @click="openPaymentModal(c)">💵 Registrar pago</button>
+            <td style="vertical-align:middle">
+              <div style="display:inline-flex;gap:8px;flex-wrap:nowrap;align-items:center">
+                <a class="btn small" :href="'/billing/' + c.id">Gestionar</a>
+                <button type="button" class="btn small primary" @click="openPaymentModal(c)">💵 Registrar pago</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -116,22 +125,32 @@
       <article v-for="c in clients" :key="c.id" class="user-card">
         <div class="user-card-head">
           <a :href="'/billing/' + c.id" class="user-name"><code v-text="c.username"></code></a>
-          <span class="role-pill" :class="paymentBadgeClass(c)" v-text="paymentBadgeLabel(c)"></span>
+          <span class="role-pill" :class="c.is_paid ? 'role-admin' : 'role-system'"
+                v-text="c.is_paid ? '✅ Pagado' : '❌ Impago'"></span>
         </div>
         <dl class="user-card-grid">
           <dt>Empresa</dt><dd v-text="c.company_name || '—'"></dd>
+          <dt>Estado</dt>
+          <dd><span class="role-pill" :class="paymentBadgeClass(c)" v-text="paymentBadgeLabel(c)"></span></dd>
           <dt>Plan</dt>
           <dd>
             <template v-if="c.assigned_plan">
               <strong v-text="c.assigned_plan.name"></strong>
-              <div class="muted small" v-text="c.assigned_plan.price.toFixed(2) + ' ' + c.assigned_plan.currency + ' / ' + c.assigned_plan.days + 'd'"></div>
+              <div class="muted small" v-text="c.assigned_plan.days + ' días'"></div>
             </template>
             <span v-else class="muted" style="color:#f59e0b">⚠ sin plan asignado</span>
           </dd>
+          <dt>Valor a cobrar</dt>
+          <dd>
+            <template v-if="c.assigned_plan">
+              <strong v-text="c.assigned_plan.price.toFixed(2) + ' ' + c.assigned_plan.currency"></strong>
+            </template>
+            <span v-else class="muted">—</span>
+          </dd>
           <dt>Pagado hasta</dt><dd v-text="c.paid_until || '—'"></dd>
-          <dt>Días</dt><dd v-text="daysText(c)"></dd>
+          <dt>Días para corte</dt><dd v-text="daysText(c)"></dd>
         </dl>
-        <div class="row">
+        <div class="row" style="gap:10px;margin-top:10px">
           <a class="btn primary" :href="'/billing/' + c.id">Gestionar</a>
           <button type="button" class="btn primary" @click="openPaymentModal(c)">💵 Registrar pago</button>
         </div>
