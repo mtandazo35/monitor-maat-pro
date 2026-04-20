@@ -74,22 +74,34 @@ def _render_compose(tenant: dict) -> str:
     return template.render(tenant=tenant, base_path=str(config.BASE_PATH))
 
 
+def tenant_domain(tenant: dict) -> str:
+    """Dominio asignado al tenant: <tenant>.<base_domain> si hay base_domain, si no "" """
+    if not tenant:
+        return ""
+    try:
+        import settings_service
+        base = settings_service.get_network_config().get("base_domain", "").strip()
+        if base:
+            return f"{tenant['name']}.{base}"
+    except Exception:
+        pass
+    return ""
+
+
 def kuma_url(tenant: dict) -> str:
     """URL pública del Uptime Kuma de un tenant.
     Si hay base_domain configurado: https://<tenant>.<base_domain> (con HTTPS o HTTP).
     Si no: http://<public_ip>:<kuma_port> (default actual)."""
     if not tenant:
         return ""
-    try:
-        import settings_service
-        cfg = settings_service.get_network_config()
-        base = cfg.get("base_domain", "").strip()
-        if base:
-            scheme = "https" if cfg.get("use_https", True) else "http"
-            return f"{scheme}://{tenant['name']}.{base}"
-    except Exception:
-        pass
-    # Fallback: IP:puerto directo
+    domain = tenant_domain(tenant)
+    if domain:
+        try:
+            import settings_service
+            scheme = "https" if settings_service.get_network_config().get("use_https", True) else "http"
+        except Exception:
+            scheme = "https"
+        return f"{scheme}://{domain}"
     return f"http://{tenant['public_ip']}:{tenant['kuma_port']}"
 
 

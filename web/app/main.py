@@ -387,6 +387,7 @@ def api_tenants(q: str = "", user: dict = Depends(current_user)):
         t["ovpn_status"] = statuses.get(f"openvpn-{t['name']}", "missing")
         t["kuma_status"] = statuses.get(f"kuma-{t['name']}", "missing")
         t["kuma_url"] = svc.kuma_url(t)
+        t["domain"] = svc.tenant_domain(t)
 
     quota_info = None
     if user["role"] == "user":

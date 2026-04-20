@@ -28,6 +28,7 @@
       <thead>
         <tr>
           <th>Nombre</th>
+          <th>Dominio</th>
           <th v-if="role === 'admin'">Empresa</th>
           <th>Slot</th><th>VPN</th><th>Kuma</th><th>Subred VPN</th>
           <th>OpenVPN</th><th>Kuma</th><th>IP pública</th><th></th>
@@ -35,7 +36,7 @@
       </thead>
       <tbody>
         <tr v-for="n in 4" :key="n">
-          <td v-for="c in (role === 'admin' ? 10 : 9)" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
+          <td v-for="c in (role === 'admin' ? 11 : 10)" :key="c"><span class="sk-inline" style="min-width:5em"></span></td>
         </tr>
       </tbody>
     </table>
@@ -54,6 +55,7 @@
         <thead>
           <tr>
             <th>Nombre</th>
+            <th>Dominio</th>
             <th v-if="role === 'admin'">Empresa</th>
             <th>Slot</th>
             <th>VPN</th>
@@ -68,6 +70,10 @@
         <tbody>
           <tr v-for="t in tenants" :key="t.name">
             <td><a :href="'/tenants/' + t.name"><strong v-text="t.name"></strong></a></td>
+            <td>
+              <a v-if="t.domain" :href="'https://' + t.domain" target="_blank" rel="noopener" v-text="t.domain"></a>
+              <span v-else class="muted">—</span>
+            </td>
             <td v-if="role === 'admin'">
               <span v-text="t.owner_company || t.owner_username || '—'"></span>
               <div v-if="t.owner_username" class="muted small" v-text="t.owner_username"></div>
@@ -100,6 +106,8 @@
           <span class="status" :class="'status-' + t.kuma_status">Kuma <span v-text="t.kuma_status"></span></span>
         </div>
         <dl class="tenant-card-grid">
+          <dt v-if="t.domain">Dominio</dt>
+          <dd v-if="t.domain"><a :href="'https://' + t.domain" target="_blank" rel="noopener" v-text="t.domain"></a></dd>
           <dt>OpenVPN</dt><dd><code v-text="t.public_ip + ':' + t.vpn_port + '/tcp'"></code></dd>
           <dt>Kuma</dt>
           <dd><a :href="t.kuma_url" target="_blank" rel="noopener" v-text="kumaShort(t)"></a></dd>
