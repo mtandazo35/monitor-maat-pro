@@ -14,9 +14,9 @@ Cada tenant tiene su propio puerto OpenVPN, rango VPN, instancia de Uptime Kuma 
 │   kumavpn-web (panel FastAPI, :8000)                           │
 │       │  docker.sock                                           │
 │       ▼                                                        │
-│   ┌─── tenant "acme" ──────────┐  ┌─── tenant "foo" ───────┐   │
-│   │ openvpn-acme  :1194/tcp    │  │ openvpn-foo :1195/tcp  │   │
-│   │ kuma-acme     :3001        │  │ kuma-foo    :3002      │   │
+│   ┌─── tenant "maat" ──────────┐  ┌─── tenant "foo" ───────┐   │
+│   │ openvpn-maat  :1194/tcp    │  │ openvpn-foo :1195/tcp  │   │
+│   │ kuma-maat     :3001        │  │ kuma-foo    :3002      │   │
 │   │ VPN net 100.64.1.0/24      │  │ VPN net 100.64.2.0/24  │   │
 │   └────────────────────────────┘  └────────────────────────┘   │
 │                                                                │
@@ -137,7 +137,7 @@ Apuntá los proxy hosts a la IP pública del server con los puertos correspondie
 
 ```
 kumavpn.tudominio.com    → http://204.168.x.x:8000      (panel)
-kuma-acme.tudominio.com  → http://204.168.x.x:3001      (kuma del tenant — ✓ Websockets)
+kuma-maat.tudominio.com  → http://204.168.x.x:3001      (kuma del tenant — ✓ Websockets)
 kuma-foo.tudominio.com   → http://204.168.x.x:3002
 ```
 
@@ -174,7 +174,7 @@ Se registra: login_success/fail, logout, password_changed, user_created/updated/
 ├── data/
 │   └── kumavpn.db             ← SQLite con users, tenants, vpn_users, networks, events, settings
 └── tenants/
-    └── acme/
+    └── maat/
         ├── docker-compose.yml ← generado al crear tenant
         ├── openvpn/           ← PKI, server.conf, /auth (passwd persistido), UptimeKuma/ (ccd + rutas.sh)
         └── kuma/              ← data de Uptime Kuma

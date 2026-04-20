@@ -8,7 +8,7 @@
   </p>
   <form method="post" action="/tenants/new" @submit="onSubmit">
     <label>Nombre (solo minúsculas, números y guiones)
-      <input name="name" v-model="name" pattern="[a-z][a-z0-9-]{1,30}" required autofocus placeholder="acme">
+      <input name="name" v-model="name" pattern="[a-z][a-z0-9-]{1,30}" required autofocus placeholder="maat">
       <small v-if="name && !valid" class="muted" style="color: var(--danger, #ef4444)">
         Debe arrancar con letra minúscula. Permitido: a-z, 0-9, guion. 2-31 chars.
       </small>
