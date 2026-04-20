@@ -99,7 +99,7 @@
                 <button type="submit" class="btn small primary">Guardar</button>
             </form>
                 <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline"
-                      onsubmit="return confirm('¿Eliminar plan {{ p.name }}? (se desactiva si tiene pagos)');">
+                      >
                   <button type="submit" class="btn small warn">Borrar</button>
                 </form>
               </td>
@@ -149,8 +149,7 @@
           </div>
           <button type="submit" class="primary" style="width:100%">Guardar cambios</button>
         </form>
-        <form method="post" action="/settings/plans/{{ p.id }}/delete" style="margin-top:10px"
-              onsubmit="return confirm('¿Eliminar plan {{ p.name }}? (se desactiva si tiene pagos)');">
+        <form method="post" action="/settings/plans/{{ p.id }}/delete" style="margin-top:10px">
           <button type="submit" class="btn warn" style="width:100%">Borrar plan</button>
         </form>
       </article>

@@ -211,15 +211,8 @@ window.addEventListener('DOMContentLoaded', () => {
         if (isNaN(d.getTime())) return ts.slice(0, 10);
         return dateFmt.format(d);
       }
-      function confirmDelete(ev, username) {
-        if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
-      }
-      function confirmToggle(ev, u) {
-        const action = u.is_active ? 'desactivar' : 'activar';
-        let msg = `¿${action.charAt(0).toUpperCase() + action.slice(1)} usuario ${u.username}?`;
-        if (u.is_active) msg += ' (si está logueado, será expulsado del panel)';
-        if (!confirm(msg)) ev.preventDefault();
-      }
+      function confirmDelete(ev, username) {}
+      function confirmToggle(ev, u) {}
 
       onMounted(fetchData);
       onBeforeUnmount(() => { if (inflight) inflight.abort(); });

@@ -155,8 +155,7 @@
   <section class="card">
     <h2 class="form-section">Acciones rápidas</h2>
     <p class="muted small">Acciones que se ejecutan al instante.</p>
-    <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline"
-          onsubmit="return confirm('¿Regenerar password de {{ edit.username }} y forzar cambio en próximo login?');">
+    <form method="post" action="/users/{{ edit.id }}/reset-password" class="inline">
       <button type="submit" class="btn">↻ Regenerar password</button>
     </form>
     <p class="muted small" style="margin-top:8px">

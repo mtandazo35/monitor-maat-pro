@@ -233,15 +233,9 @@ window.addEventListener('DOMContentLoaded', () => {
       function stop() { if (timer) { clearInterval(timer); timer = null; } }
       function onVis() { document.hidden ? stop() : start(); }
 
-      function confirmUser(ev, username) {
-        if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
-      }
-      function confirmNet(ev, cidr) {
-        if (!confirm('¿Eliminar red ' + cidr + '?')) ev.preventDefault();
-      }
-      function confirmDelete(ev) {
-        if (!confirm('Esto es irreversible. ¿Seguro?')) ev.preventDefault();
-      }
+      function confirmUser(ev, username) {}
+      function confirmNet(ev, cidr) {}
+      function confirmDelete(ev) {}
 
       async function copy(ev, text) {
         const btn = ev.target;
