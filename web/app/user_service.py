@@ -99,6 +99,13 @@ def authenticate(username: str, password: str) -> Optional[dict]:
     return user
 
 
+def is_active(user: Optional[dict]) -> bool:
+    """Devuelve True si el usuario está activo (default 1 si la columna no existe)."""
+    if not user:
+        return False
+    return bool(user.get("is_active", 1))
+
+
 def count_user_tenants(user_id: int) -> int:
     with connect() as con:
         row = con.execute(
@@ -287,6 +294,23 @@ def update_user(
     params.append(user_id)
     with connect() as con:
         con.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", params)
+    return get_user(user_id)
+
+
+def set_active(user_id: int, active: bool) -> dict:
+    """Activa o desactiva un usuario. Bloquea desactivar al último admin."""
+    user = get_user(user_id)
+    if not user:
+        raise UserError("Usuario no encontrado.")
+    if not active and user["role"] == "admin":
+        with connect() as con:
+            n = con.execute(
+                "SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND is_active = 1"
+            ).fetchone()["c"]
+        if n <= 1:
+            raise UserError("No se puede desactivar al último admin activo.")
+    with connect() as con:
+        con.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if active else 0, user_id))
     return get_user(user_id)
 
 

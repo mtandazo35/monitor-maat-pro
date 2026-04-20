@@ -142,6 +142,11 @@ def current_user(request: Request) -> dict:
     user = auth.session_user(request)
     if not user:
         raise AuthRequired()
+    # Bloqueo si esta desactivado: cierra sesion + redirige a login
+    if not usr.is_active(user):
+        request.session.clear()
+        _flash(request, "Tu cuenta fue desactivada. Contactá al administrador.", "error")
+        raise AuthRequired()
     # Si tiene flag, redirigir a /change-password (excepto si ya está en esa ruta o haciendo logout)
     path = request.url.path
     if user.get("must_change_password") and path not in ("/change-password", "/logout"):
@@ -217,6 +222,14 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     security.record_attempt(ip, uname, success=bool(user))
 
     if user:
+        if not usr.is_active(user):
+            events.log(
+                "login_blocked_inactive", "auth",
+                actor=user, severity="warn",
+                details="cuenta desactivada por admin", ip=ip,
+            )
+            _flash(request, "Tu cuenta está desactivada. Contactá al administrador.", "error")
+            return RedirectResponse("/login", status_code=303)
         security.reset_user_attempts(uname)
         request.session["user_id"] = user["id"]
         events.log("login_success", "auth", actor=user, ip=ip)
@@ -636,6 +649,7 @@ _USER_PUBLIC_FIELDS = (
     "id", "username", "first_name", "last_name", "company_name",
     "email", "phone", "phone_cc", "role", "tenant_count", "tenant_quota",
     "created_at", "must_change_password", "paid_until", "assigned_plan_id",
+    "is_active",
 )
 
 
@@ -1092,6 +1106,32 @@ def user_reset_password(request: Request, user_id: int, user: dict = Depends(cur
         msg.append(f"Password: {new_pwd} — guardala.")
     msg.append("Al próximo login se le va a pedir cambiarla.")
     _flash(request, " ".join(msg), "success")
+    return RedirectResponse("/users", status_code=303)
+
+
+@app.post("/users/{user_id}/toggle-active")
+def user_toggle_active(request: Request, user_id: int, user: dict = Depends(current_admin)):
+    target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    if target["id"] == user["id"]:
+        _flash(request, "No podés desactivarte a vos mismo.", "error")
+        return RedirectResponse("/users", status_code=303)
+    new_state = not usr.is_active(target)
+    try:
+        updated = usr.set_active(user_id, new_state)
+    except usr.UserError as e:
+        _flash(request, str(e), "error")
+        return RedirectResponse("/users", status_code=303)
+    label = "activado" if new_state else "desactivado"
+    events.log(
+        "user_toggled_active", "user",
+        actor=user, target_user=target,
+        details=f"is_active={1 if new_state else 0}",
+        severity="warn" if not new_state else "info",
+        ip=_client_ip(request),
+    )
+    _flash(request, f"Usuario '{target['username']}' {label}.", "success")
     return RedirectResponse("/users", status_code=303)
 
 

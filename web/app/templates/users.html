@@ -45,8 +45,11 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="u in users" :key="u.id">
-            <td><strong v-text="u.username"></strong></td>
+          <tr v-for="u in users" :key="u.id" :class="{ 'row-inactive': !u.is_active }">
+            <td>
+              <strong v-text="u.username"></strong>
+              <span v-if="!u.is_active" class="role-pill role-system" style="margin-left:6px">desactivado</span>
+            </td>
             <td v-text="fullName(u) || '—'"></td>
             <td v-text="u.company_name || '—'"></td>
             <td>
@@ -75,11 +78,19 @@
             </td>
             <td class="muted small" v-text="formatDate(u.created_at)"></td>
             <td>
-              <a class="btn small" :href="'/users/' + u.id + '/edit'">Editar</a>
-              <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
-                    @submit="confirmDelete($event, u.username)">
-                <button class="btn small warn">Borrar</button>
-              </form>
+              <div class="row" style="gap:8px;flex-wrap:nowrap;justify-content:flex-end">
+                <a class="btn small" :href="'/users/' + u.id + '/edit'">Editar</a>
+                <form :action="'/users/' + u.id + '/toggle-active'" method="post" class="inline"
+                      @submit="confirmToggle($event, u)">
+                  <button type="submit" class="btn small"
+                          :class="u.is_active ? 'btn-warn-soft' : 'btn-ok-soft'"
+                          v-text="u.is_active ? 'Desactivar' : 'Activar'"></button>
+                </form>
+                <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
+                      @submit="confirmDelete($event, u.username)">
+                  <button class="btn small warn">Borrar</button>
+                </form>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -87,9 +98,12 @@
     </div>
 
     <div class="mobile-only user-list-cards">
-      <article v-for="u in users" :key="u.id" class="user-card">
+      <article v-for="u in users" :key="u.id" class="user-card" :class="{ 'row-inactive': !u.is_active }">
         <div class="user-card-head">
-          <code class="user-name" v-text="u.username"></code>
+          <div>
+            <code class="user-name" v-text="u.username"></code>
+            <span v-if="!u.is_active" class="role-pill role-system" style="margin-left:6px">desactivado</span>
+          </div>
           <span class="role-pill" :class="'role-' + u.role" v-text="u.role"></span>
         </div>
         <dl class="user-card-grid">
@@ -121,8 +135,14 @@
             </dd>
           </template>
         </dl>
-        <div class="row">
+        <div class="row" style="gap:10px;margin-top:10px">
           <a class="btn primary" :href="'/users/' + u.id + '/edit'">Editar</a>
+          <form :action="'/users/' + u.id + '/toggle-active'" method="post" class="inline"
+                @submit="confirmToggle($event, u)">
+            <button type="submit" class="btn"
+                    :class="u.is_active ? 'btn-warn-soft' : 'btn-ok-soft'"
+                    v-text="u.is_active ? 'Desactivar' : 'Activar'"></button>
+          </form>
           <form :action="'/users/' + u.id + '/delete'" method="post" class="inline"
                 @submit="confirmDelete($event, u.username)">
             <button class="btn warn">Borrar</button>
@@ -194,11 +214,17 @@ window.addEventListener('DOMContentLoaded', () => {
       function confirmDelete(ev, username) {
         if (!confirm('¿Eliminar usuario ' + username + '?')) ev.preventDefault();
       }
+      function confirmToggle(ev, u) {
+        const action = u.is_active ? 'desactivar' : 'activar';
+        let msg = `¿${action.charAt(0).toUpperCase() + action.slice(1)} usuario ${u.username}?`;
+        if (u.is_active) msg += ' (si está logueado, será expulsado del panel)';
+        if (!confirm(msg)) ev.preventDefault();
+      }
 
       onMounted(fetchData);
       onBeforeUnmount(() => { if (inflight) inflight.abort(); });
 
-      return { loading, q, users, onSearch, clearSearch, fullName, formatDate, confirmDelete };
+      return { loading, q, users, onSearch, clearSearch, fullName, formatDate, confirmDelete, confirmToggle };
     },
     delimiters: ['[[', ']]'],
   }).mount('#users-app');
@@ -207,6 +233,33 @@ window.addEventListener('DOMContentLoaded', () => {
 
 <style>
   [v-cloak] { visibility: hidden; }
+
+  /* Filas desactivadas: opacas para identificar visualmente */
+  .row-inactive { opacity: .55; }
+  .row-inactive:hover { opacity: 1; }
+
+  /* Botones soft: amarillo para desactivar, verde para activar (menos
+     agresivos que warn rojo, no se confunden con "Borrar") */
+  .btn-warn-soft {
+    background: #f5b454 !important;
+    color: #1f1408 !important;
+    border-color: #d8901c !important;
+    font-weight: 600;
+  }
+  .btn-warn-soft:hover {
+    background: #d8901c !important;
+    color: #fff !important;
+  }
+  .btn-ok-soft {
+    background: #34c780 !important;
+    color: #062817 !important;
+    border-color: #1d9c5d !important;
+    font-weight: 600;
+  }
+  .btn-ok-soft:hover {
+    background: #1d9c5d !important;
+    color: #fff !important;
+  }
   .sk-inline {
     display: inline-block;
     min-height: 1em;
