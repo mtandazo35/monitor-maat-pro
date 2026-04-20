@@ -162,7 +162,7 @@
       <div class="paginator-controls">
         <label class="paginator-size">
           Por página
-          <select name="page_size" onchange="document.getElementById('me-billing-paginator').submit()">
+          <select name="page_size" id="me-billing-size">
             {% for s in p.page_sizes %}
               <option value="{{ s }}" {% if s == p.page_size %}selected{% endif %}>{{ s }}</option>
             {% endfor %}
@@ -188,6 +188,30 @@
         </div>
       </div>
     </form>
+    <script>
+    (function() {
+      var KEY = 'mm_page_size_me_billing';
+      var ALLOWED = [10, 15, 20, 50, 100];
+      var url = new URL(window.location.href);
+      var hasUrlSize = url.searchParams.has('page_size');
+      var saved;
+      try { saved = parseInt(localStorage.getItem(KEY) || '', 10); } catch (e) { saved = NaN; }
+      // Si URL no trae page_size pero hay preferencia guardada distinta del default, redirigir
+      if (!hasUrlSize && ALLOWED.indexOf(saved) !== -1 && saved !== {{ p.page_size }}) {
+        url.searchParams.set('page_size', String(saved));
+        url.searchParams.set('page', '1');
+        window.location.replace(url.toString());
+        return;
+      }
+      var sel = document.getElementById('me-billing-size');
+      if (sel) {
+        sel.addEventListener('change', function() {
+          try { localStorage.setItem(KEY, sel.value); } catch (e) {}
+          document.getElementById('me-billing-paginator').submit();
+        });
+      }
+    })();
+    </script>
   {% endif %}
   {% endif %}
 </section>

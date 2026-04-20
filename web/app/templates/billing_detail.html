@@ -205,11 +205,20 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Estado compartido entre las 4 apps
   const PAGE_SIZES = [10, 15, 20, 50, 100];
+  const SIZE_KEY = 'mm_page_size_billing_detail';
+  function readSavedSize() {
+    try {
+      const s = parseInt(localStorage.getItem(SIZE_KEY) || '', 10);
+      return PAGE_SIZES.includes(s) ? s : null;
+    } catch (e) { return null; }
+  }
+  function saveSize(s) { try { localStorage.setItem(SIZE_KEY, String(s)); } catch (e) {} }
   const initialUrlParams = new URLSearchParams(window.location.search);
   const initialPage = parseInt(initialUrlParams.get('page') || '1', 10) || 1;
   const initialSize = (() => {
-    const s = parseInt(initialUrlParams.get('page_size') || '20', 10);
-    return PAGE_SIZES.includes(s) ? s : 20;
+    const urlS = parseInt(initialUrlParams.get('page_size') || '', 10);
+    if (PAGE_SIZES.includes(urlS)) return urlS;
+    return readSavedSize() || 20;
   })();
   const shared = {
     loading: true,
@@ -371,6 +380,7 @@ window.addEventListener('DOMContentLoaded', () => {
         fetchData();
       }
       function onPageSize() {
+        saveSize(pageSize.value);
         shared.pageSize = pageSize.value;
         shared.page = 1;
         loading.value = true;
