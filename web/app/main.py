@@ -15,6 +15,7 @@ import tenant_service as svc
 import user_service as usr
 import billing_service as billing
 import payphone_service as payphone
+import caddy_service as caddy
 import email_service as mail
 import settings_service as settings
 import notify_service as notify
@@ -428,6 +429,12 @@ def new_tenant_submit(
         return RedirectResponse("/tenants/new", status_code=303)
 
     t = svc.get_tenant(name)
+    # Auto-regenerar Caddyfile + reload (silencioso si Caddy no esta o no configurado)
+    try:
+        if caddy.is_configured():
+            caddy.apply()
+    except Exception:
+        pass
     events.log("tenant_created", "tenant", actor=user, tenant=t, ip=_client_ip(request))
     notify.send_admin(
         f"🆕 <b>Tenant creado</b>\nNombre: <code>{name}</code>\n"
@@ -633,6 +640,12 @@ def delete_tenant(
     owner = _tenant_owner(tenant)
     try:
         svc.delete_tenant(name)
+        # Auto-regenerar Caddyfile + reload (silencioso si Caddy no esta o no configurado)
+        try:
+            if caddy.is_configured():
+                caddy.apply()
+        except Exception:
+            pass
         events.log("tenant_deleted", "tenant", actor=user, tenant=tenant, severity="warn", ip=_client_ip(request))
         notify.send_admin(f"🗑️ Tenant <b>{name}</b> eliminado por {user['username']}")
         notify.send_user(owner, f"🗑️ Tu tenant <b>{name}</b> fue eliminado", event_key="tenant_deleted")
@@ -1312,6 +1325,8 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
             "cfg": settings.get_network_config(),
             "tenants": svc.list_tenants(),
             "public_ip": config.PUBLIC_IP or "",
+            "caddy_running": caddy.caddy_container_running(),
+            "caddyfile_preview": caddy.generate_caddyfile() if caddy.is_configured() else "",
             "flash": _pop_flash(request),
         },
     )
@@ -1320,21 +1335,40 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
 @app.post("/settings/network")
 def network_settings_save(
     request: Request,
-    base_domain: str = Form(""),
+    panel_domain: str = Form(""),
+    tenants_domain: str = Form(""),
+    caddy_email: str = Form(""),
     use_https: str = Form(""),
     user: dict = Depends(current_admin),
 ):
     try:
         settings.save_network_config(
-            base_domain=base_domain,
+            panel_domain=panel_domain,
+            tenants_domain=tenants_domain,
+            caddy_email=caddy_email,
             use_https=bool(use_https),
         )
         events.log("network_settings_saved", "settings", actor=user,
-                   details=f"base_domain={base_domain} https={bool(use_https)}",
+                   details=f"panel={panel_domain} tenants={tenants_domain}",
                    ip=_client_ip(request))
-        _flash(request, "Configuración de red guardada.", "success")
+        # Auto-aplicar al guardar si Caddy esta corriendo
+        ok, msg = caddy.apply()
+        if ok:
+            _flash(request, f"Configuración guardada. {msg}", "success")
+        else:
+            _flash(request, f"Configuración guardada pero Caddy no se aplicó: {msg}", "info")
     except ValueError as e:
         _flash(request, str(e), "error")
+    return RedirectResponse("/settings/network", status_code=303)
+
+
+@app.post("/settings/network/apply")
+def network_apply_caddy(request: Request, user: dict = Depends(current_admin)):
+    """Reaplicar manualmente el Caddyfile (útil si se cambió algo fuera)."""
+    ok, msg = caddy.apply()
+    events.log("caddy_apply", "settings", actor=user, details=msg[:200],
+               severity="info" if ok else "warn", ip=_client_ip(request))
+    _flash(request, msg, "success" if ok else "error")
     return RedirectResponse("/settings/network", status_code=303)
 
 

@@ -6,87 +6,160 @@
 </div>
 
 <section class="card">
-  <h2 class="form-section">Dominio base para Uptime Kuma</h2>
+  <h2 class="form-section">Configurá tus dominios</h2>
   <p class="muted">
-    Si configurás un dominio aquí, los Uptime Kuma de cada tenant se mostrarán como
-    <code>&lt;tenant&gt;.tudominio.com</code> en lugar de <code>http://IP:puerto</code>.
-    Las VPN siguen mostrando la IP (necesario para OpenVPN endpoints).
-  </p>
-  <p class="muted small">
-    <strong>Requiere:</strong> registro DNS wildcard <code>*.tudominio.com → {{ public_ip or 'IP del VPS' }}</code>
-    y un reverse proxy (Caddy recomendado, abajo te genero el archivo).
+    Una sola vez. Después Caddy genera SSL automáticamente para el panel y para
+    cada subdominio de tenant. Cuando crees/borres tenants, el Caddyfile se
+    regenera y se aplica solo.
   </p>
 
   <form method="post" action="/settings/network">
-    <label>Dominio base
-      <input name="base_domain" value="{{ cfg.base_domain }}" placeholder="ej: kumavpn.tudominio.com">
-      <small class="muted">Sin <code>http://</code>, sin barras. Vacío para usar IP:puerto (default).</small>
+    <label>1. Dominio del <strong>panel admin</strong>
+      <input name="panel_domain" value="{{ cfg.panel_domain }}"
+             placeholder="ej: panel.midominio.com">
+      <small class="muted">El dominio donde queda accesible este panel (HTTPS automático).</small>
+    </label>
+
+    <label>2. Dominio raíz para los <strong>tenants</strong> (Uptime Kuma)
+      <input name="tenants_domain" value="{{ cfg.tenants_domain }}"
+             placeholder="ej: kuma.midominio.com">
+      <small class="muted">Cada tenant queda en <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'tudominio.com' }}</code>. Requiere DNS wildcard.</small>
+    </label>
+
+    <label>3. Email para Let's Encrypt
+      <input name="caddy_email" type="email" value="{{ cfg.caddy_email }}"
+             placeholder="tu@email.com">
+      <small class="muted">Para avisos de expiración de cert. No se publica.</small>
     </label>
 
     <label class="row" style="align-items:center;gap:10px;margin-top:6px">
       <input type="checkbox" name="use_https" value="1" {% if cfg.use_https %}checked{% endif %}>
-      <span>Usar HTTPS para los URLs de los tenants</span>
+      <span>Mostrar URLs como HTTPS en el panel</span>
     </label>
-    <small class="muted">Marcado por default. Caddy genera certs Let's Encrypt automáticos por subdominio.</small>
 
-    <div class="row" style="margin-top:14px">
-      <button type="submit" class="primary">Guardar</button>
+    <div class="row" style="margin-top:16px">
+      <button type="submit" class="primary">💾 Guardar y aplicar</button>
     </div>
   </form>
 </section>
 
+{# === Estado del setup === #}
 <section class="card">
-  <h2 class="form-section">📋 Caddyfile generado</h2>
-  {% if not cfg.base_domain %}
-  <p class="muted">Configurá primero el dominio base arriba para generar el Caddyfile.</p>
-  {% else %}
-  <p class="muted">
-    Caddy es un reverse proxy con HTTPS automático (Let's Encrypt). Este Caddyfile
-    contiene un bloque por cada tenant existente, escuchando en <code>&lt;tenant&gt;.{{ cfg.base_domain }}</code>
-    y redirigiendo al puerto del Uptime Kuma correspondiente.
-  </p>
+  <h2 class="form-section">Estado del setup</h2>
+  <dl class="grid">
+    <dt>Configuración</dt>
+    <dd>
+      {% if cfg.panel_domain or cfg.tenants_domain %}
+        <span class="role-pill role-admin">configurada</span>
+      {% else %}
+        <span class="role-pill role-system">vacía</span>
+      {% endif %}
+    </dd>
+    <dt>Container Caddy</dt>
+    <dd>
+      {% if caddy_running %}
+        <span class="role-pill role-admin">corriendo</span>
+        <span class="muted small">— reload automático activado</span>
+      {% else %}
+        <span class="role-pill role-system">no detectado</span>
+        <span class="muted small">— ver instrucciones más abajo</span>
+      {% endif %}
+    </dd>
+  </dl>
 
-  <div class="row" style="gap:10px;margin:10px 0 14px">
-    <a class="btn primary" href="/settings/network/caddyfile" download="Caddyfile">⬇ Descargar Caddyfile</a>
-  </div>
-
-  <details class="mk-details" open>
-    <summary>📖 Pasos de instalación en el VPS</summary>
-    <div style="padding:8px 0">
-      <ol style="line-height:1.7">
-        <li>
-          En tu DNS (Cloudflare, NameCheap, etc.) creá un registro A wildcard:
-          <pre class="mk" style="margin:6px 0">*.{{ cfg.base_domain }}    A    {{ public_ip or 'IP_DEL_VPS' }}</pre>
-          <small class="muted">Si usás Cloudflare en modo proxy (nube naranja), poné <strong>nube gris</strong> para que Caddy maneje TLS directo.</small>
-        </li>
-        <li>
-          Conectate al VPS por SSH y instalá Caddy:
-          <pre class="mk" style="margin:6px 0">apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-apt update && apt install -y caddy</pre>
-        </li>
-        <li>
-          Descargá el Caddyfile (botón arriba) y subilo al VPS:
-          <pre class="mk" style="margin:6px 0">scp Caddyfile root@{{ public_ip or 'IP_VPS' }}:/etc/caddy/Caddyfile</pre>
-        </li>
-        <li>
-          Reload Caddy para aplicar:
-          <pre class="mk" style="margin:6px 0">systemctl reload caddy</pre>
-          Caddy va a pedir certs Let's Encrypt automáticamente al primer request a cada subdominio.
-        </li>
-        <li>
-          <strong>Cada vez que crees o borres un tenant, repetí los pasos 3 y 4</strong>
-          (o usá rsync/script para automatizarlo).
-        </li>
-      </ol>
-    </div>
-  </details>
+  {% if (cfg.panel_domain or cfg.tenants_domain) and caddy_running %}
+  <form method="post" action="/settings/network/apply" style="margin-top:10px">
+    <button type="submit" class="btn">↻ Reaplicar Caddyfile manualmente</button>
+  </form>
   {% endif %}
 </section>
 
+{# === DNS records === #}
+{% if cfg.panel_domain or cfg.tenants_domain %}
 <section class="card">
-  <h2 class="form-section">📊 URLs actuales de tus tenants</h2>
+  <h2 class="form-section">📡 Records DNS necesarios</h2>
+  <p class="muted">Configurá estos records en tu proveedor (Cloudflare, NameCheap, etc.):</p>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Tipo</th><th>Nombre</th><th>Valor</th></tr>
+      </thead>
+      <tbody>
+        {% if cfg.panel_domain %}
+        <tr>
+          <td><code>A</code></td>
+          <td><code>{{ cfg.panel_domain }}</code></td>
+          <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+        </tr>
+        {% endif %}
+        {% if cfg.tenants_domain %}
+        <tr>
+          <td><code>A</code></td>
+          <td><code>*.{{ cfg.tenants_domain }}</code></td>
+          <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small" style="margin-top:8px">
+    ⚠ Si usás Cloudflare con proxy (nube naranja): poné <strong>nube gris</strong> (DNS only)
+    para que Caddy maneje TLS directo. O cambiá a <strong>Full (strict)</strong> en
+    SSL/TLS de CF si querés mantener el proxy.
+  </p>
+</section>
+{% endif %}
+
+{# === Instalación de Caddy (si no esta corriendo) === #}
+{% if not caddy_running and (cfg.panel_domain or cfg.tenants_domain) %}
+<section class="card">
+  <h2 class="form-section">⚙ Instalar Caddy en el VPS</h2>
+  <p class="muted">Caddy es el reverse proxy que maneja SSL automático. Hay que instalarlo una sola vez:</p>
+
+  <details class="mk-details" open>
+    <summary>📋 Comandos paso a paso</summary>
+    <div style="padding:8px 0">
+      <p><strong>1. Conectate al VPS por SSH y crear el container Caddy</strong> (elegí UNO de los dos modos):</p>
+
+      <p style="margin-top:14px"><strong>Opción A — Caddy con docker run (rápido):</strong></p>
+      <pre class="mk" style="margin:6px 0">mkdir -p /opt/kumavpn/caddy /opt/kumavpn/caddy-data /opt/kumavpn/caddy-config
+
+docker run -d \
+  --name caddy-monitormaat \
+  --restart unless-stopped \
+  --network kumavpn-admin_default \
+  -p 80:80 -p 443:443 -p 443:443/udp \
+  -v /opt/kumavpn/caddy/Caddyfile:/etc/caddy/Caddyfile \
+  -v /opt/kumavpn/caddy-data:/data \
+  -v /opt/kumavpn/caddy-config:/config \
+  caddy:2-alpine</pre>
+
+      <p style="margin-top:14px"><strong>Opción B — Agregar al docker-compose existente:</strong></p>
+      <p class="muted small">Edita <code>/opt/kumavpn-docker/docker-compose.yml</code> y agregá un servicio caddy con el mismo network. Después <code>docker compose up -d</code>.</p>
+
+      <p style="margin-top:14px"><strong>2. Volvé a esta pantalla y guardá los dominios.</strong></p>
+      <p class="muted small">El panel detecta el container Caddy y aplica el Caddyfile automáticamente.</p>
+
+      <p style="margin-top:14px"><strong>3. Verificá:</strong></p>
+      <pre class="mk" style="margin:6px 0">docker logs -f caddy-monitormaat</pre>
+      <p class="muted small">Vas a ver los pedidos a Let's Encrypt y los certs emitidos.</p>
+    </div>
+  </details>
+</section>
+{% endif %}
+
+{# === Caddyfile preview === #}
+{% if caddyfile_preview %}
+<section class="card">
+  <h2 class="form-section">📄 Caddyfile generado (preview)</h2>
+  <p class="muted small">Este es el archivo que el panel escribe a <code>/opt/kumavpn/caddy/Caddyfile</code> cada vez que cambia la config o se crean/borran tenants.</p>
+  <pre class="mk" style="max-height:400px;overflow:auto;font-size:.78rem">{{ caddyfile_preview }}</pre>
+</section>
+{% endif %}
+
+{# === Tabla de URLs actuales === #}
+<section class="card">
+  <h2 class="form-section">📊 URLs públicos de tenants</h2>
   {% if not tenants %}
   <p class="muted">No hay tenants creados todavía.</p>
   {% else %}
@@ -101,9 +174,9 @@ apt update && apt install -y caddy</pre>
         <tr>
           <td><strong>{{ t.name }}</strong></td>
           <td>
-            {% if cfg.base_domain %}
-              <a href="{{ scheme }}://{{ t.name }}.{{ cfg.base_domain }}" target="_blank" rel="noopener">
-                {{ scheme }}://{{ t.name }}.{{ cfg.base_domain }} ↗
+            {% if cfg.tenants_domain %}
+              <a href="{{ scheme }}://{{ t.name }}.{{ cfg.tenants_domain }}" target="_blank" rel="noopener">
+                {{ scheme }}://{{ t.name }}.{{ cfg.tenants_domain }} ↗
               </a>
               <div class="muted small">(antes: http://{{ t.public_ip }}:{{ t.kuma_port }})</div>
             {% else %}

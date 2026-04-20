@@ -73,21 +73,51 @@ def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
 
 
 def get_network_config() -> dict:
-    """Configuración de red/dominios. Si base_domain está vacío, los tenants
-    siguen mostrándose con IP:puerto."""
+    """Configuración de red/dominios.
+    - panel_domain: dominio del panel principal (ej. 'panel.midominio.com')
+    - tenants_domain: dominio raíz para los subdominios de tenants
+      (ej. 'kuma.midominio.com', cada tenant queda en '<nombre>.kuma.midominio.com')
+    - caddy_email: email para Let's Encrypt (recibe avisos de expiración)
+    - use_https: si los URLs mostrados usan https (default true)
+
+    Si tenants_domain está vacío, los tenants siguen mostrándose con IP:puerto.
+    base_domain se mantiene como alias legacy de tenants_domain.
+    """
+    tenants_domain = get("tenants_domain", get("base_domain", ""))
     return {
-        "base_domain": get("base_domain", ""),
+        "panel_domain": get("panel_domain", ""),
+        "tenants_domain": tenants_domain,
+        "base_domain": tenants_domain,  # alias legacy
+        "caddy_email": get("caddy_email", ""),
         "use_https": get("use_https", "1") == "1",
     }
 
 
-def save_network_config(base_domain: str, use_https: bool) -> None:
-    s = (base_domain or "").strip().lower()
-    # Validación mínima: solo letras, números, puntos, guiones
+def save_network_config(
+    panel_domain: str,
+    tenants_domain: str,
+    caddy_email: str,
+    use_https: bool,
+) -> None:
     import re
-    if s and not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}$", s):
-        raise ValueError("Dominio inválido. Use formato 'tudominio.com' (sin http://, sin barras).")
-    set_value("base_domain", s)
+    DOMAIN_RE = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
+    EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+    pd = (panel_domain or "").strip().lower()
+    td = (tenants_domain or "").strip().lower()
+    em = (caddy_email or "").strip()
+
+    if pd and not DOMAIN_RE.match(pd):
+        raise ValueError("Dominio del panel inválido. Formato 'panel.midominio.com'.")
+    if td and not DOMAIN_RE.match(td):
+        raise ValueError("Dominio de tenants inválido. Formato 'kuma.midominio.com'.")
+    if em and not EMAIL_RE.match(em):
+        raise ValueError("Email inválido para Let's Encrypt.")
+
+    set_value("panel_domain", pd)
+    set_value("tenants_domain", td)
+    set_value("base_domain", td)  # mantener alias para compat
+    set_value("caddy_email", em)
     set_value("use_https", "1" if use_https else "0")
 
 
