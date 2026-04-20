@@ -1941,3 +1941,61 @@ pre.mk {
   .stat-cards { grid-template-columns: 1fr; }
   h1 { font-size: 1.2rem; }
 }
+
+/* ============== Paginador (lists con paginación) ============== */
+.paginator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.paginator-info { color: var(--muted); font-size: .85rem; }
+.paginator-info strong { color: var(--text); }
+.paginator-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.paginator-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.paginator-size select {
+  padding: 4px 8px;
+  font-size: .85rem;
+  min-width: 64px;
+}
+.paginator-pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.paginator-pages .btn {
+  min-width: 36px;
+  padding: 6px 10px;
+  font-size: .85rem;
+}
+.paginator-pages .btn[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.paginator-pages .pg-current {
+  padding: 0 6px;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+@media (max-width: 600px) {
+  .paginator { flex-direction: column; align-items: stretch; gap: 10px; }
+  .paginator-controls { justify-content: space-between; }
+}

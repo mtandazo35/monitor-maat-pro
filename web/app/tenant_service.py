@@ -105,9 +105,7 @@ def kuma_url(tenant: dict) -> str:
     return f"http://{tenant['public_ip']}:{tenant['kuma_port']}"
 
 
-def list_tenants(owner_id: Optional[int] = None, search: Optional[str] = None) -> list[dict]:
-    sql = """SELECT t.*, u.username AS owner_username, u.company_name AS owner_company
-             FROM tenants t LEFT JOIN users u ON u.id = t.owner_id"""
+def _tenants_filters(owner_id: Optional[int], search: Optional[str]) -> tuple[str, list]:
     where: list[str] = []
     params: list = []
     if owner_id is not None:
@@ -119,12 +117,34 @@ def list_tenants(owner_id: Optional[int] = None, search: Optional[str] = None) -
         )
         like = f"%{search.strip()}%"
         params.extend([like, like, like])
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY t.slot"
+    return (" WHERE " + " AND ".join(where)) if where else "", params
+
+
+def list_tenants(
+    owner_id: Optional[int] = None,
+    search: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: int = 0,
+) -> list[dict]:
+    where_sql, params = _tenants_filters(owner_id, search)
+    sql = (
+        "SELECT t.*, u.username AS owner_username, u.company_name AS owner_company "
+        "FROM tenants t LEFT JOIN users u ON u.id = t.owner_id"
+        + where_sql + " ORDER BY t.slot"
+    )
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([int(limit), int(offset)])
     with connect() as con:
         rows = con.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def count_tenants(owner_id: Optional[int] = None, search: Optional[str] = None) -> int:
+    where_sql, params = _tenants_filters(owner_id, search)
+    sql = "SELECT COUNT(*) AS c FROM tenants t LEFT JOIN users u ON u.id = t.owner_id" + where_sql
+    with connect() as con:
+        return con.execute(sql, params).fetchone()["c"]
 
 
 def get_tenant(name: str) -> Optional[dict]:

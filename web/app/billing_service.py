@@ -190,13 +190,20 @@ def mark_warning_sent(user_id: int, for_date: str) -> None:
 
 # ---------------- LECTURAS ----------------
 
-def list_payments(user_id: int, limit: int = 100) -> list[dict]:
+def list_payments(user_id: int, limit: int = 100, offset: int = 0) -> list[dict]:
     with connect() as con:
         rows = con.execute(
-            "SELECT * FROM payments WHERE user_id = ? ORDER BY paid_at DESC LIMIT ?",
-            (user_id, limit),
+            "SELECT * FROM payments WHERE user_id = ? ORDER BY paid_at DESC LIMIT ? OFFSET ?",
+            (user_id, int(limit), int(offset)),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def count_payments(user_id: int) -> int:
+    with connect() as con:
+        return con.execute(
+            "SELECT COUNT(*) AS c FROM payments WHERE user_id = ?", (user_id,)
+        ).fetchone()["c"]
 
 
 # ---------------- PLANES ----------------

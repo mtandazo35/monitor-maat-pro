@@ -12,6 +12,20 @@ import config
 import auth
 import db
 import tenant_service as svc
+
+# Tamaños de página permitidos para listados
+ALLOWED_PAGE_SIZES = (10, 15, 20, 50, 100)
+DEFAULT_PAGE_SIZE = 20
+
+
+def _paginate(page: int, page_size: int) -> tuple[int, int, int]:
+    """Normaliza page (>=1) y page_size (whitelist). Devuelve (page, page_size, offset)."""
+    if page_size not in ALLOWED_PAGE_SIZES:
+        page_size = DEFAULT_PAGE_SIZE
+    if page < 1:
+        page = 1
+    return page, page_size, (page - 1) * page_size
+
 import user_service as usr
 import billing_service as billing
 import payphone_service as payphone
@@ -376,11 +390,17 @@ def tenants_list(request: Request, q: str = "", user: dict = Depends(current_use
 
 
 @app.get("/api/tenants")
-def api_tenants(q: str = "", user: dict = Depends(current_user)):
-    if user["role"] == "admin":
-        tenants = svc.list_tenants(search=q or None)
-    else:
-        tenants = svc.list_tenants(owner_id=user["id"], search=q or None)
+def api_tenants(
+    q: str = "",
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    user: dict = Depends(current_user),
+):
+    page, page_size, offset = _paginate(page, page_size)
+    owner_id = None if user["role"] == "admin" else user["id"]
+    tenants = svc.list_tenants(owner_id=owner_id, search=q or None,
+                                limit=page_size, offset=offset)
+    total = svc.count_tenants(owner_id=owner_id, search=q or None)
 
     statuses = svc.container_statuses_bulk()
     for t in tenants:
@@ -396,7 +416,11 @@ def api_tenants(q: str = "", user: dict = Depends(current_user)):
             "total": user.get("tenant_quota") or 0,
         }
     return JSONResponse(
-        {"tenants": tenants, "quota": quota_info, "q": q},
+        {
+            "tenants": tenants, "quota": quota_info, "q": q,
+            "page": page, "page_size": page_size, "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+        },
         headers={"Cache-Control": "no-store"},
     )
 
@@ -767,19 +791,28 @@ def api_billing(q: str = "", user: dict = Depends(current_admin)):
 
 
 @app.get("/api/billing/{user_id}")
-def api_billing_detail(user_id: int, user: dict = Depends(current_admin)):
+def api_billing_detail(
+    user_id: int,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    user: dict = Depends(current_admin),
+):
     target = usr.get_user(user_id)
     if not target:
         raise HTTPException(404)
     if target["role"] == "admin":
         raise HTTPException(404)
     target["tenant_count"] = usr.count_user_tenants(user_id)
+    page, page_size, offset = _paginate(page, page_size)
+    total = billing.count_payments(user_id)
     return JSONResponse(
         {
             "user": _user_public(target),
             "plan": billing.plan_summary(target),
-            "payments": billing.list_payments(user_id),
+            "payments": billing.list_payments(user_id, limit=page_size, offset=offset),
             "available_plans": billing.list_plans(active_only=True),
+            "page": page, "page_size": page_size, "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -1516,19 +1549,33 @@ def plans_delete(
 # -------- MI SUSCRIPCIÓN / PAGO (cliente) --------
 
 @app.get("/me/billing", response_class=HTMLResponse)
-def me_billing(request: Request, user: dict = Depends(current_user)):
+def me_billing(
+    request: Request,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    user: dict = Depends(current_user),
+):
     if user["role"] == "admin":
         _flash(request, "Los administradores no requieren suscripción.", "info")
         return RedirectResponse("/", status_code=303)
+    page, page_size, offset = _paginate(page, page_size)
+    total = billing.count_payments(user["id"])
+    total_pages = max(1, (total + page_size - 1) // page_size)
     return templates.TemplateResponse(
         "me_billing.html",
         {
             "request": request, "user": user,
             "plan_summary": billing.plan_summary(user),
             "assigned_plan": billing.get_assigned_plan(user),
-            "payments": billing.list_payments(user["id"]),
+            "payments": billing.list_payments(user["id"], limit=page_size, offset=offset),
             "payphone_ready": payphone.is_configured(),
             "flash": _pop_flash(request),
+            "pagination": {
+                "page": page, "page_size": page_size,
+                "total": total, "total_pages": total_pages,
+                "page_sizes": list(ALLOWED_PAGE_SIZES),
+                "base_url": "/me/billing",
+            },
         },
     )
 
@@ -1802,16 +1849,29 @@ def api_logs(
     source: str = "",
     category: str = "",
     q: str = "",
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
     user: dict = Depends(current_admin),
 ):
+    page, page_size, offset = _paginate(page, page_size)
     rows = events.list_events(
         actor_role=source or None,
         category=category or None,
         search=q or None,
-        limit=300,
+        limit=page_size, offset=offset,
+    )
+    total = events.count_events(
+        actor_role=source or None,
+        category=category or None,
+        search=q or None,
     )
     return JSONResponse(
-        {"events": rows, "filters": {"source": source, "category": category, "q": q}},
+        {
+            "events": rows,
+            "filters": {"source": source, "category": category, "q": q},
+            "page": page, "page_size": page_size, "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+        },
         headers={"Cache-Control": "no-store"},
     )
 
@@ -1828,6 +1888,19 @@ def logs_me(request: Request, user: dict = Depends(current_user)):
 
 
 @app.get("/api/me/logs")
-def api_logs_me(user: dict = Depends(current_user)):
-    rows = events.list_events_for_user(user["id"], limit=300)
-    return JSONResponse({"events": rows}, headers={"Cache-Control": "no-store"})
+def api_logs_me(
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    user: dict = Depends(current_user),
+):
+    page, page_size, offset = _paginate(page, page_size)
+    rows = events.list_events_for_user(user["id"], limit=page_size, offset=offset)
+    total = events.count_events_for_user(user["id"])
+    return JSONResponse(
+        {
+            "events": rows,
+            "page": page, "page_size": page_size, "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+        },
+        headers={"Cache-Control": "no-store"},
+    )

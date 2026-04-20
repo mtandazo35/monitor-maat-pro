@@ -150,6 +150,45 @@
       </tbody>
     </table>
   </div>
+
+  {% if pagination and pagination.total > 0 %}
+    {% set p = pagination %}
+    {% set range_from = (p.page - 1) * p.page_size + 1 %}
+    {% set range_to = (p.page * p.page_size) if (p.page * p.page_size) < p.total else p.total %}
+    <form method="get" action="{{ p.base_url }}" class="paginator" id="me-billing-paginator">
+      <div class="paginator-info">
+        Mostrando <strong>{{ range_from }}</strong>–<strong>{{ range_to }}</strong> de <strong>{{ p.total }}</strong>
+      </div>
+      <div class="paginator-controls">
+        <label class="paginator-size">
+          Por página
+          <select name="page_size" onchange="document.getElementById('me-billing-paginator').submit()">
+            {% for s in p.page_sizes %}
+              <option value="{{ s }}" {% if s == p.page_size %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <input type="hidden" name="page" value="1" id="me-billing-page-input">
+        <div class="paginator-pages">
+          {% if p.page > 1 %}
+            <a class="btn small" href="{{ p.base_url }}?page=1&page_size={{ p.page_size }}">«</a>
+            <a class="btn small" href="{{ p.base_url }}?page={{ p.page - 1 }}&page_size={{ p.page_size }}">‹</a>
+          {% else %}
+            <button type="button" class="btn small" disabled>«</button>
+            <button type="button" class="btn small" disabled>‹</button>
+          {% endif %}
+          <span class="pg-current">{{ p.page }} / {{ p.total_pages }}</span>
+          {% if p.page < p.total_pages %}
+            <a class="btn small" href="{{ p.base_url }}?page={{ p.page + 1 }}&page_size={{ p.page_size }}">›</a>
+            <a class="btn small" href="{{ p.base_url }}?page={{ p.total_pages }}&page_size={{ p.page_size }}">»</a>
+          {% else %}
+            <button type="button" class="btn small" disabled>›</button>
+            <button type="button" class="btn small" disabled>»</button>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+  {% endif %}
   {% endif %}
 </section>
 

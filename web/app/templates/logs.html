@@ -99,6 +99,27 @@
       </article>
     </div>
   </template>
+
+  <div v-if="!loading && total > 0" class="paginator">
+    <div class="paginator-info">
+      Mostrando <strong>[[ rangeFrom ]]</strong>–<strong>[[ rangeTo ]]</strong> de <strong>[[ total ]]</strong>
+    </div>
+    <div class="paginator-controls">
+      <label class="paginator-size">
+        Por página
+        <select v-model.number="pageSize" @change="onPageSize">
+          <option v-for="s in pageSizes" :key="s" :value="s" v-text="s"></option>
+        </select>
+      </label>
+      <div class="paginator-pages">
+        <button class="btn small" :disabled="page <= 1" @click="goPage(1)">«</button>
+        <button class="btn small" :disabled="page <= 1" @click="goPage(page - 1)">‹</button>
+        <span class="pg-current">[[ page ]] / [[ totalPages ]]</span>
+        <button class="btn small" :disabled="page >= totalPages" @click="goPage(page + 1)">›</button>
+        <button class="btn small" :disabled="page >= totalPages" @click="goPage(totalPages)">»</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js" defer></script>
@@ -123,7 +144,14 @@ window.addEventListener('DOMContentLoaded', () => {
     { value: 'user', label: 'Clientes' },
   ];
 
-  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
+  const { createApp, ref, computed, onMounted, onBeforeUnmount } = Vue;
+  const PAGE_SIZES = [10, 15, 20, 50, 100];
+  const initialUrlParams = new URLSearchParams(window.location.search);
+  const initialPage = parseInt(initialUrlParams.get('page') || '1', 10) || 1;
+  const initialSize = (() => {
+    const s = parseInt(initialUrlParams.get('page_size') || '20', 10);
+    return PAGE_SIZES.includes(s) ? s : 20;
+  })();
 
   createApp({
     setup() {
@@ -134,6 +162,11 @@ window.addEventListener('DOMContentLoaded', () => {
       const category = ref(initial.category);
       const q = ref(initial.q);
       const newKeys = ref(new Set());
+      const page = ref(initialPage);
+      const pageSize = ref(initialSize);
+      const total = ref(0);
+      const totalPages = ref(1);
+      const pageSizes = PAGE_SIZES;
 
       let timer = null;
       let inflight = null;
@@ -148,20 +181,28 @@ window.addEventListener('DOMContentLoaded', () => {
         if (source.value) params.set('source', source.value);
         if (category.value) params.set('category', category.value);
         if (q.value) params.set('q', q.value);
-        const url = '/api/logs' + (params.toString() ? '?' + params : '');
+        params.set('page', String(page.value));
+        params.set('page_size', String(pageSize.value));
+        const url = '/api/logs?' + params.toString();
         try {
           const r = await fetch(url, { credentials: 'same-origin', signal: inflight.signal });
           if (!r.ok) { error.value = true; return; }
           const d = await r.json();
+          // Solo resaltar nuevos cuando estamos en la primera página
+          // (en otras páginas las "nuevas" filas no entran en la vista)
           const fresh = new Set();
-          if (lastTopTs && d.events.length) {
+          if (page.value === 1 && lastTopTs && d.events.length) {
             for (const e of d.events) {
               if (e.ts <= lastTopTs) break;
               fresh.add(e.ts + '|' + e.action + '|' + (e.actor_username || ''));
             }
           }
-          if (d.events.length) lastTopTs = d.events[0].ts;
+          if (page.value === 1 && d.events.length) lastTopTs = d.events[0].ts;
           events.value = d.events;
+          total.value = d.total || 0;
+          totalPages.value = d.total_pages || 1;
+          if (d.page) page.value = d.page;
+          if (d.page_size) pageSize.value = d.page_size;
           if (fresh.size > 0) {
             newKeys.value = fresh;
             if (highlightTimer) clearTimeout(highlightTimer);
@@ -178,16 +219,29 @@ window.addEventListener('DOMContentLoaded', () => {
 
       function syncUrl() {
         const url = new URL(window.location.href);
-        ['source', 'category', 'q'].forEach(k => url.searchParams.delete(k));
+        ['source', 'category', 'q', 'page', 'page_size'].forEach(k => url.searchParams.delete(k));
         if (source.value) url.searchParams.set('source', source.value);
         if (category.value) url.searchParams.set('category', category.value);
         if (q.value) url.searchParams.set('q', q.value);
+        url.searchParams.set('page', String(page.value));
+        url.searchParams.set('page_size', String(pageSize.value));
         window.history.replaceState({}, '', url);
       }
 
-      function apply() { loading.value = true; syncUrl(); fetchData(); }
+      function apply() { page.value = 1; loading.value = true; syncUrl(); fetchData(); }
       function setSource(v) { source.value = v; apply(); }
       function clearAll() { source.value = ''; category.value = ''; q.value = ''; apply(); }
+      function goPage(p) {
+        const target = Math.max(1, Math.min(totalPages.value, p));
+        if (target === page.value) return;
+        page.value = target;
+        loading.value = true;
+        syncUrl();
+        fetchData();
+      }
+      function onPageSize() { page.value = 1; loading.value = true; syncUrl(); fetchData(); }
+      const rangeFrom = computed(() => total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1);
+      const rangeTo = computed(() => Math.min(page.value * pageSize.value, total.value));
 
       function start() { stop(); fetchData(); timer = setInterval(fetchData, REFRESH_MS); }
       function stop() { if (timer) { clearInterval(timer); timer = null; } }
@@ -225,6 +279,8 @@ window.addEventListener('DOMContentLoaded', () => {
       return {
         loading, error, events, source, category, q, categories, sourceOpts,
         apply, setSource, clearAll, formatTs, rolePillClass, rolePillLabel, isNew,
+        page, pageSize, pageSizes, total, totalPages,
+        goPage, onPageSize, rangeFrom, rangeTo,
       };
     },
     delimiters: ['[[', ']]'],
