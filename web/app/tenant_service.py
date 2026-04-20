@@ -74,6 +74,25 @@ def _render_compose(tenant: dict) -> str:
     return template.render(tenant=tenant, base_path=str(config.BASE_PATH))
 
 
+def kuma_url(tenant: dict) -> str:
+    """URL pública del Uptime Kuma de un tenant.
+    Si hay base_domain configurado: https://<tenant>.<base_domain> (con HTTPS o HTTP).
+    Si no: http://<public_ip>:<kuma_port> (default actual)."""
+    if not tenant:
+        return ""
+    try:
+        import settings_service
+        cfg = settings_service.get_network_config()
+        base = cfg.get("base_domain", "").strip()
+        if base:
+            scheme = "https" if cfg.get("use_https", True) else "http"
+            return f"{scheme}://{tenant['name']}.{base}"
+    except Exception:
+        pass
+    # Fallback: IP:puerto directo
+    return f"http://{tenant['public_ip']}:{tenant['kuma_port']}"
+
+
 def list_tenants(owner_id: Optional[int] = None, search: Optional[str] = None) -> list[dict]:
     sql = """SELECT t.*, u.username AS owner_username, u.company_name AS owner_company
              FROM tenants t LEFT JOIN users u ON u.id = t.owner_id"""

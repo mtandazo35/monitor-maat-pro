@@ -72,6 +72,25 @@ def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
     set_value("telegram_admin_chat_id", admin_chat_id.strip())
 
 
+def get_network_config() -> dict:
+    """Configuración de red/dominios. Si base_domain está vacío, los tenants
+    siguen mostrándose con IP:puerto."""
+    return {
+        "base_domain": get("base_domain", ""),
+        "use_https": get("use_https", "1") == "1",
+    }
+
+
+def save_network_config(base_domain: str, use_https: bool) -> None:
+    s = (base_domain or "").strip().lower()
+    # Validación mínima: solo letras, números, puntos, guiones
+    import re
+    if s and not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}$", s):
+        raise ValueError("Dominio inválido. Use formato 'tudominio.com' (sin http://, sin barras).")
+    set_value("base_domain", s)
+    set_value("use_https", "1" if use_https else "0")
+
+
 def get_billing_config() -> dict:
     """Configuración global de facturación. Por ahora solo la hora de suspensión:
     si paid_until = hoy, el cliente sigue activo hasta esa hora (Ecuador)."""

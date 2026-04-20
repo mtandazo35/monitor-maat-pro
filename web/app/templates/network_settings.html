@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Red y dominios · MonitorMaat Admin{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>🌐 Red y dominios</h1>
+</div>
+
+<section class="card">
+  <h2 class="form-section">Dominio base para Uptime Kuma</h2>
+  <p class="muted">
+    Si configurás un dominio aquí, los Uptime Kuma de cada tenant se mostrarán como
+    <code>&lt;tenant&gt;.tudominio.com</code> en lugar de <code>http://IP:puerto</code>.
+    Las VPN siguen mostrando la IP (necesario para OpenVPN endpoints).
+  </p>
+  <p class="muted small">
+    <strong>Requiere:</strong> registro DNS wildcard <code>*.tudominio.com → {{ public_ip or 'IP del VPS' }}</code>
+    y un reverse proxy (Caddy recomendado, abajo te genero el archivo).
+  </p>
+
+  <form method="post" action="/settings/network">
+    <label>Dominio base
+      <input name="base_domain" value="{{ cfg.base_domain }}" placeholder="ej: kumavpn.tudominio.com">
+      <small class="muted">Sin <code>http://</code>, sin barras. Vacío para usar IP:puerto (default).</small>
+    </label>
+
+    <label class="row" style="align-items:center;gap:10px;margin-top:6px">
+      <input type="checkbox" name="use_https" value="1" {% if cfg.use_https %}checked{% endif %}>
+      <span>Usar HTTPS para los URLs de los tenants</span>
+    </label>
+    <small class="muted">Marcado por default. Caddy genera certs Let's Encrypt automáticos por subdominio.</small>
+
+    <div class="row" style="margin-top:14px">
+      <button type="submit" class="primary">Guardar</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="form-section">📋 Caddyfile generado</h2>
+  {% if not cfg.base_domain %}
+  <p class="muted">Configurá primero el dominio base arriba para generar el Caddyfile.</p>
+  {% else %}
+  <p class="muted">
+    Caddy es un reverse proxy con HTTPS automático (Let's Encrypt). Este Caddyfile
+    contiene un bloque por cada tenant existente, escuchando en <code>&lt;tenant&gt;.{{ cfg.base_domain }}</code>
+    y redirigiendo al puerto del Uptime Kuma correspondiente.
+  </p>
+
+  <div class="row" style="gap:10px;margin:10px 0 14px">
+    <a class="btn primary" href="/settings/network/caddyfile" download="Caddyfile">⬇ Descargar Caddyfile</a>
+  </div>
+
+  <details class="mk-details" open>
+    <summary>📖 Pasos de instalación en el VPS</summary>
+    <div style="padding:8px 0">
+      <ol style="line-height:1.7">
+        <li>
+          En tu DNS (Cloudflare, NameCheap, etc.) creá un registro A wildcard:
+          <pre class="mk" style="margin:6px 0">*.{{ cfg.base_domain }}    A    {{ public_ip or 'IP_DEL_VPS' }}</pre>
+          <small class="muted">Si usás Cloudflare en modo proxy (nube naranja), poné <strong>nube gris</strong> para que Caddy maneje TLS directo.</small>
+        </li>
+        <li>
+          Conectate al VPS por SSH y instalá Caddy:
+          <pre class="mk" style="margin:6px 0">apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy</pre>
+        </li>
+        <li>
+          Descargá el Caddyfile (botón arriba) y subilo al VPS:
+          <pre class="mk" style="margin:6px 0">scp Caddyfile root@{{ public_ip or 'IP_VPS' }}:/etc/caddy/Caddyfile</pre>
+        </li>
+        <li>
+          Reload Caddy para aplicar:
+          <pre class="mk" style="margin:6px 0">systemctl reload caddy</pre>
+          Caddy va a pedir certs Let's Encrypt automáticamente al primer request a cada subdominio.
+        </li>
+        <li>
+          <strong>Cada vez que crees o borres un tenant, repetí los pasos 3 y 4</strong>
+          (o usá rsync/script para automatizarlo).
+        </li>
+      </ol>
+    </div>
+  </details>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2 class="form-section">📊 URLs actuales de tus tenants</h2>
+  {% if not tenants %}
+  <p class="muted">No hay tenants creados todavía.</p>
+  {% else %}
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Tenant</th><th>Kuma URL</th><th>OpenVPN endpoint</th></tr>
+      </thead>
+      <tbody>
+        {% for t in tenants %}
+        {% set scheme = 'https' if cfg.use_https else 'http' %}
+        <tr>
+          <td><strong>{{ t.name }}</strong></td>
+          <td>
+            {% if cfg.base_domain %}
+              <a href="{{ scheme }}://{{ t.name }}.{{ cfg.base_domain }}" target="_blank" rel="noopener">
+                {{ scheme }}://{{ t.name }}.{{ cfg.base_domain }} ↗
+              </a>
+              <div class="muted small">(antes: http://{{ t.public_ip }}:{{ t.kuma_port }})</div>
+            {% else %}
+              <a href="http://{{ t.public_ip }}:{{ t.kuma_port }}" target="_blank" rel="noopener">
+                http://{{ t.public_ip }}:{{ t.kuma_port }} ↗
+              </a>
+            {% endif %}
+          </td>
+          <td><code>{{ t.public_ip }}:{{ t.vpn_port }}/tcp</code> <span class="muted small">(siempre IP)</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

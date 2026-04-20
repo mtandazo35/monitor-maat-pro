@@ -40,8 +40,8 @@
       </dd>
       <dt>Kuma</dt>
       <dd>
-        <a :href="'http://' + tenant.public_ip + ':' + tenant.kuma_port" target="_blank" rel="noopener"
-           v-text="'http://' + tenant.public_ip + ':' + tenant.kuma_port + ' ↗'"></a>
+        <a :href="tenant.kuma_url" target="_blank" rel="noopener"
+           v-text="(tenant.kuma_url || '').replace(/^https?:\/\//, '') + ' ↗'"></a>
         <span class="status" :class="'status-' + tenant.kuma_status" v-text="tenant.kuma_status"></span>
       </dd>
       <dt>Subred VPN</dt><dd><code v-text="tenant.vpn_subnet + '/24'"></code></dd>

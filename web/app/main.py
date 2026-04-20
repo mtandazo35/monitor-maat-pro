@@ -385,6 +385,7 @@ def api_tenants(q: str = "", user: dict = Depends(current_user)):
     for t in tenants:
         t["ovpn_status"] = statuses.get(f"openvpn-{t['name']}", "missing")
         t["kuma_status"] = statuses.get(f"kuma-{t['name']}", "missing")
+        t["kuma_url"] = svc.kuma_url(t)
 
     quota_info = None
     if user["role"] == "user":
@@ -475,6 +476,7 @@ def api_tenant_detail(name: str, user: dict = Depends(current_user)):
         u["mikrotik"] = svc.mikrotik_snippet(tenant, u)
     tenant["ovpn_status"] = svc.container_status(f"openvpn-{tenant['name']}")
     tenant["kuma_status"] = svc.container_status(f"kuma-{tenant['name']}")
+    tenant["kuma_url"] = svc.kuma_url(tenant)
     return JSONResponse(
         {"tenant": tenant, "users": users_list},
         headers={"Cache-Control": "no-store"},
@@ -1297,6 +1299,91 @@ def plans_settings(request: Request, user: dict = Depends(current_admin)):
             "plans": billing.list_plans(active_only=False),
             "billing_cfg": settings.get_billing_config(),
             "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.get("/settings/network", response_class=HTMLResponse)
+def network_settings_form(request: Request, user: dict = Depends(current_admin)):
+    return templates.TemplateResponse(
+        "network_settings.html",
+        {
+            "request": request, "user": user,
+            "cfg": settings.get_network_config(),
+            "tenants": svc.list_tenants(),
+            "public_ip": config.PUBLIC_IP or "",
+            "flash": _pop_flash(request),
+        },
+    )
+
+
+@app.post("/settings/network")
+def network_settings_save(
+    request: Request,
+    base_domain: str = Form(""),
+    use_https: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    try:
+        settings.save_network_config(
+            base_domain=base_domain,
+            use_https=bool(use_https),
+        )
+        events.log("network_settings_saved", "settings", actor=user,
+                   details=f"base_domain={base_domain} https={bool(use_https)}",
+                   ip=_client_ip(request))
+        _flash(request, "Configuración de red guardada.", "success")
+    except ValueError as e:
+        _flash(request, str(e), "error")
+    return RedirectResponse("/settings/network", status_code=303)
+
+
+@app.get("/settings/network/caddyfile", response_class=HTMLResponse)
+def network_caddyfile(request: Request, user: dict = Depends(current_admin)):
+    """Genera el Caddyfile completo para reverse proxy de todos los Kuma de tenants.
+    Devuelve text/plain para que el admin lo descargue/copie."""
+    cfg = settings.get_network_config()
+    base = cfg.get("base_domain", "").strip()
+    if not base:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            "# Configurá primero el dominio base en /settings/network\n",
+            status_code=400,
+        )
+    tenants = svc.list_tenants()
+    lines = [
+        f"# Caddyfile generado por MonitorMaat",
+        f"# Base domain: {base}",
+        f"# Total tenants: {len(tenants)}",
+        f"#",
+        f"# Instalar Caddy: apt install caddy",
+        f"# Mover este archivo a: /etc/caddy/Caddyfile",
+        f"# Reload: systemctl reload caddy",
+        f"#",
+        f"# Importante: en Cloudflare/DNS configurá un registro A wildcard:",
+        f"#   *.{base}  →  {config.PUBLIC_IP or 'IP_DEL_VPS'}",
+        f"# Y deshabilitá el proxy CF (nube gris) si Caddy maneja TLS.",
+        f"",
+    ]
+    # Bloque por tenant
+    for t in tenants:
+        lines.append(f"# Tenant: {t['name']} (slot {t['slot']})")
+        lines.append(f"{t['name']}.{base} {{")
+        lines.append(f"    reverse_proxy 127.0.0.1:{t['kuma_port']}")
+        lines.append(f"}}")
+        lines.append("")
+    # Bloque opcional para el panel admin en el dominio base
+    lines.append(f"# Panel MonitorMaat (acceso por dominio base)")
+    lines.append(f"{base} {{")
+    lines.append(f"    reverse_proxy 127.0.0.1:80")
+    lines.append(f"}}")
+    lines.append("")
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        "\n".join(lines),
+        headers={
+            "Content-Disposition": 'attachment; filename="Caddyfile"',
+            "Content-Type": "text/plain; charset=utf-8",
         },
     )
 
