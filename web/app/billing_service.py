@@ -213,10 +213,34 @@ def list_plans(active_only: bool = False) -> list[dict]:
     params: list = []
     if active_only:
         sql += " WHERE is_active = 1"
-    sql += " ORDER BY sort_order, price"
+    sql += " ORDER BY sort_order, price, id"
     with connect() as con:
         rows = con.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def _renumber_plans(con) -> None:
+    """Reasigna sort_order a 1..N respetando el orden actual.
+    Lo ejecutamos despues de crear/borrar/reordenar para que la columna
+    'Orden' siempre se vea como 1, 2, 3... sin huecos."""
+    rows = con.execute(
+        "SELECT id FROM plans ORDER BY sort_order, price, id"
+    ).fetchall()
+    for i, r in enumerate(rows, start=1):
+        con.execute("UPDATE plans SET sort_order = ? WHERE id = ?", (i, r["id"]))
+
+
+def count_plan_associations(plan_id: int) -> dict:
+    """Cuenta cuantos usuarios tienen este plan asignado y cuantos pagos lo
+    referencian en su historial. Si total > 0, el plan esta 'en uso'."""
+    with connect() as con:
+        u = con.execute(
+            "SELECT COUNT(*) AS c FROM users WHERE assigned_plan_id = ?", (plan_id,)
+        ).fetchone()["c"]
+        p = con.execute(
+            "SELECT COUNT(*) AS c FROM payments WHERE plan_id = ?", (plan_id,)
+        ).fetchone()["c"]
+    return {"users": int(u), "payments": int(p), "total": int(u) + int(p)}
 
 
 def get_plan(plan_id: int) -> Optional[dict]:
@@ -242,15 +266,21 @@ def create_plan(
     if days <= 0:
         raise BillingError("Los días deben ser mayores a 0.")
     with connect() as con:
+        # Siempre apendear al final: tomamos max(sort_order)+1.
+        # El campo sort_order del form se ignora; renumeramos al final 1..N.
+        max_so = con.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) AS m FROM plans"
+        ).fetchone()["m"]
         cur = con.execute(
             """INSERT INTO plans (name, description, price, currency, days,
                                   is_active, sort_order, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (name, (description or "").strip() or None, float(price),
              (currency or "USD").strip().upper(), int(days),
-             1 if is_active else 0, int(sort_order), now_iso()),
+             1 if is_active else 0, int(max_so) + 1, now_iso()),
         )
         pid = cur.lastrowid
+        _renumber_plans(con)
         row = con.execute("SELECT * FROM plans WHERE id = ?", (pid,)).fetchone()
     return dict(row)
 
@@ -259,7 +289,14 @@ def update_plan(plan_id: int, **fields) -> dict:
     plan = get_plan(plan_id)
     if not plan:
         raise BillingError("Plan no encontrado.")
-    allowed = {"name", "description", "price", "currency", "days", "is_active", "sort_order"}
+    # Si el plan esta en uso (clientes asignados o pagos), restringimos a los
+    # campos seguros: precio, dias, nombre, descripcion. El resto (currency,
+    # is_active, sort_order) queda bloqueado.
+    assoc = count_plan_associations(plan_id)
+    if assoc["total"] > 0:
+        allowed = {"name", "description", "price", "days"}
+    else:
+        allowed = {"name", "description", "price", "currency", "days", "is_active", "sort_order"}
     sets = []
     params: list = []
     for k, v in fields.items():
@@ -290,8 +327,11 @@ def update_plan(plan_id: int, **fields) -> dict:
     if not sets:
         return plan
     params.append(plan_id)
+    reordered = "sort_order" in {k for k, v in fields.items() if v is not None and k in allowed}
     with connect() as con:
         con.execute(f"UPDATE plans SET {', '.join(sets)} WHERE id = ?", params)
+        if reordered:
+            _renumber_plans(con)
     return get_plan(plan_id)
 
 
@@ -299,13 +339,20 @@ def delete_plan(plan_id: int) -> None:
     plan = get_plan(plan_id)
     if not plan:
         raise BillingError("Plan no encontrado.")
+    assoc = count_plan_associations(plan_id)
+    if assoc["total"] > 0:
+        parts = []
+        if assoc["users"] > 0:
+            parts.append(f"{assoc['users']} cliente{'s' if assoc['users'] != 1 else ''} con este plan asignado")
+        if assoc["payments"] > 0:
+            parts.append(f"{assoc['payments']} pago{'s' if assoc['payments'] != 1 else ''} en el historial")
+        raise BillingError(
+            "No se puede borrar el plan porque tiene " + " y ".join(parts) +
+            ". Reasigna los clientes a otro plan antes de borrarlo."
+        )
     with connect() as con:
-        # Si tiene pagos asociados, mejor desactivar que borrar (preserva historial)
-        n = con.execute("SELECT COUNT(*) AS c FROM payments WHERE plan_id = ?", (plan_id,)).fetchone()["c"]
-        if n > 0:
-            con.execute("UPDATE plans SET is_active = 0 WHERE id = ?", (plan_id,))
-        else:
-            con.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+        con.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+        _renumber_plans(con)
 
 
 # ---------------- ASIGNACION DE PLAN A USER ----------------

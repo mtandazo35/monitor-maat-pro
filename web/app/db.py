@@ -184,6 +184,17 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # Renumerar plans.sort_order a 1..N respetando orden actual.
+        # Idempotente: si ya estan 1..N queda igual; si vienen de 0/duplicados los normaliza.
+        try:
+            rows = con.execute(
+                "SELECT id FROM plans ORDER BY sort_order, price, id"
+            ).fetchall()
+            for i, r in enumerate(rows, start=1):
+                con.execute("UPDATE plans SET sort_order = ? WHERE id = ?", (i, r["id"]))
+        except Exception:
+            pass
+
 
 @contextmanager
 def connect():

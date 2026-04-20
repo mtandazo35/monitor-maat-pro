@@ -23,14 +23,9 @@
 <section class="card">
   <h2 class="form-section">Crear nuevo plan</h2>
   <form method="post" action="/settings/plans/new">
-    <div class="form-grid-2">
-      <label>Nombre
-        <input name="name" required placeholder="Pro" maxlength="40">
-      </label>
-      <label>Orden (menor → primero)
-        <input name="sort_order" type="number" value="0">
-      </label>
-    </div>
+    <label>Nombre
+      <input name="name" required placeholder="Pro" maxlength="40">
+    </label>
     <label>Descripción
       <input name="description" placeholder="Plan profesional con soporte prioritario" maxlength="200">
     </label>
@@ -49,6 +44,9 @@
       <input name="days" type="number" min="1" required value="30">
       <small class="muted">Cuántos días suma al <code>paid_until</code> del cliente cuando paga este plan.</small>
     </label>
+    <p class="muted small" style="margin:6px 0 0">
+      📌 El nuevo plan se agrega al final del listado. Podés reordenarlo después editando el campo "Orden" (mientras no esté asignado a clientes).
+    </p>
 
     <div class="toggle-card">
       <label class="toggle-row">
@@ -88,33 +86,63 @@
         </thead>
         <tbody>
           {% for p in plans %}
-          <tr>
+          <tr {% if p.locked %}class="plan-row-locked"{% endif %}>
             <form method="post" action="/settings/plans/{{ p.id }}/edit">
-              <td style="vertical-align:middle"><input type="number" name="sort_order" value="{{ p.sort_order }}" style="width:4.5em"></td>
-              <td style="vertical-align:middle"><input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em"></td>
+              <td style="vertical-align:middle">
+                {% if p.locked %}
+                  <span class="plan-order-readonly">{{ p.sort_order }}</span>
+                {% else %}
+                  <input type="number" name="sort_order" value="{{ p.sort_order }}" min="1" style="width:4.5em">
+                {% endif %}
+              </td>
+              <td style="vertical-align:middle">
+                <input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em">
+                {% if p.locked %}
+                  <div class="plan-lock-badge" title="{{ p.associations.users }} cliente(s) asignado(s) · {{ p.associations.payments }} pago(s) en historial">
+                    🔒 en uso
+                  </div>
+                {% endif %}
+              </td>
               <td style="vertical-align:middle"><input name="description" value="{{ p.description or '' }}" maxlength="200"></td>
               <td style="vertical-align:middle">
                 <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap">
                   <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required style="width:6em">
-                  <select name="currency" style="width:5em">
-                    {% for c in ['USD','EUR'] %}
-                    <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
-                    {% endfor %}
-                  </select>
+                  {% if p.locked %}
+                    <span class="plan-currency-readonly">{{ p.currency }}</span>
+                  {% else %}
+                    <select name="currency" style="width:5em">
+                      {% for c in ['USD','EUR'] %}
+                      <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
+                      {% endfor %}
+                    </select>
+                  {% endif %}
                 </div>
               </td>
               <td style="vertical-align:middle"><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:4.5em"></td>
               <td style="vertical-align:middle;text-align:center">
-                <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}
-                       style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+                {% if p.locked %}
+                  <span class="status status-{{ 'ok' if p.is_active else 'down' }}" title="No se puede modificar: plan en uso">
+                    {{ '✓' if p.is_active else '✗' }}
+                  </span>
+                {% else %}
+                  <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}
+                         style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+                {% endif %}
               </td>
               <td style="vertical-align:middle">
                 <div style="display:inline-flex;gap:8px;flex-wrap:nowrap">
                   <button type="submit" class="btn small primary">Guardar</button>
             </form>
-                  <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline">
-                    <button type="submit" class="btn small warn">Borrar</button>
-                  </form>
+                  {% if p.locked %}
+                    <button type="button" class="btn small" disabled
+                            title="No se puede borrar: {{ p.associations.users }} cliente(s) asignado(s){% if p.associations.payments %}, {{ p.associations.payments }} pago(s) en historial{% endif %}">
+                      Borrar 🔒
+                    </button>
+                  {% else %}
+                    <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline">
+                      <button type="submit" class="btn small warn">Borrar</button>
+                    </form>
+                  {% endif %}
                 </div>
               </td>
           </tr>
@@ -128,12 +156,23 @@
       {% for p in plans %}
       <article style="background:var(--panel-alt);border:1px solid var(--border);border-radius:10px;padding:14px">
         <form method="post" action="/settings/plans/{{ p.id }}/edit">
-          <div class="row between" style="margin-bottom:8px">
-            <strong>Plan #{{ p.id }}</strong>
-            <label class="row" style="gap:6px;align-items:center;font-size:.9rem">
-              <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
-              Activo
-            </label>
+          <div class="row between" style="margin-bottom:8px;align-items:flex-start">
+            <div>
+              <strong>#{{ p.sort_order }} · Plan {{ p.id }}</strong>
+              {% if p.locked %}
+                <div class="plan-lock-badge">🔒 en uso ({{ p.associations.users }} cliente(s){% if p.associations.payments %}, {{ p.associations.payments }} pago(s){% endif %})</div>
+              {% endif %}
+            </div>
+            {% if p.locked %}
+              <span class="status status-{{ 'ok' if p.is_active else 'down' }}" style="font-size:.85rem">
+                {{ 'Activo' if p.is_active else 'Inactivo' }}
+              </span>
+            {% else %}
+              <label class="row" style="gap:6px;align-items:center;font-size:.9rem">
+                <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
+                Activo
+              </label>
+            {% endif %}
           </div>
           <label>Nombre
             <input name="name" value="{{ p.name }}" required maxlength="40">
@@ -146,11 +185,15 @@
               <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required>
             </label>
             <label>Moneda
-              <select name="currency">
-                {% for c in ['USD','EUR'] %}
-                <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
-                {% endfor %}
-              </select>
+              {% if p.locked %}
+                <input type="text" value="{{ p.currency }}" disabled>
+              {% else %}
+                <select name="currency">
+                  {% for c in ['USD','EUR'] %}
+                  <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
+                  {% endfor %}
+                </select>
+              {% endif %}
             </label>
           </div>
           <div class="form-grid-2">
@@ -158,17 +201,56 @@
               <input name="days" type="number" min="1" value="{{ p.days }}" required>
             </label>
             <label>Orden
-              <input type="number" name="sort_order" value="{{ p.sort_order }}">
+              {% if p.locked %}
+                <input type="text" value="{{ p.sort_order }}" disabled>
+              {% else %}
+                <input type="number" name="sort_order" value="{{ p.sort_order }}" min="1">
+              {% endif %}
             </label>
           </div>
           <button type="submit" class="primary" style="width:100%">Guardar cambios</button>
         </form>
-        <form method="post" action="/settings/plans/{{ p.id }}/delete" style="margin-top:10px">
-          <button type="submit" class="btn warn" style="width:100%">Borrar plan</button>
-        </form>
+        {% if p.locked %}
+          <button type="button" class="btn" style="width:100%;margin-top:10px;opacity:.5;cursor:not-allowed" disabled>
+            🔒 Plan en uso — no se puede borrar
+          </button>
+        {% else %}
+          <form method="post" action="/settings/plans/{{ p.id }}/delete" style="margin-top:10px">
+            <button type="submit" class="btn warn" style="width:100%">Borrar plan</button>
+          </form>
+        {% endif %}
       </article>
       {% endfor %}
     </div>
   {% endif %}
 </section>
+
+<style>
+  .plan-lock-badge {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: .72rem;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    font-weight: 600;
+    cursor: help;
+  }
+  .plan-row-locked .plan-lock-badge { white-space: nowrap; }
+  .plan-order-readonly,
+  .plan-currency-readonly {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--panel-alt);
+    color: var(--muted);
+    font-size: .85rem;
+    border: 1px dashed var(--border);
+    cursor: help;
+  }
+  .plan-currency-readonly { width: 5em; text-align: center; }
+  .plan-order-readonly { width: 4.5em; text-align: center; }
+</style>
 {% endblock %}

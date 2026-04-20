@@ -1340,11 +1340,15 @@ def payphone_settings_save(
 
 @app.get("/settings/plans", response_class=HTMLResponse)
 def plans_settings(request: Request, user: dict = Depends(current_admin)):
+    plans = billing.list_plans(active_only=False)
+    for p in plans:
+        p["associations"] = billing.count_plan_associations(p["id"])
+        p["locked"] = p["associations"]["total"] > 0
     return templates.TemplateResponse(
         "plans_settings.html",
         {
             "request": request, "user": user,
-            "plans": billing.list_plans(active_only=False),
+            "plans": plans,
             "billing_cfg": settings.get_billing_config(),
             "flash": _pop_flash(request),
         },
@@ -1482,15 +1486,14 @@ def plans_create(
     currency: str = Form("USD"),
     days: str = Form(...),
     is_active: str = Form(""),
-    sort_order: str = Form("0"),
     user: dict = Depends(current_admin),
 ):
     try:
+        # sort_order se asigna automáticamente (siempre al final, luego renumer a 1..N)
         plan = billing.create_plan(
             name=name, description=description,
             price=float(price.replace(",", ".")), days=int(days),
             currency=currency, is_active=bool(is_active),
-            sort_order=int(sort_order) if sort_order.strip() else 0,
         )
         events.log("plan_created", "settings", actor=user,
                    details=f"plan={plan['name']} ${plan['price']}", ip=_client_ip(request))
@@ -1510,17 +1513,24 @@ def plans_update(
     currency: str = Form("USD"),
     days: str = Form(...),
     is_active: str = Form(""),
-    sort_order: str = Form("0"),
+    sort_order: str = Form(""),
     user: dict = Depends(current_admin),
 ):
     try:
-        billing.update_plan(
-            plan_id,
-            name=name, description=description,
-            price=float(price.replace(",", ".")), days=int(days),
-            currency=currency, is_active=bool(is_active),
-            sort_order=int(sort_order) if sort_order.strip() else 0,
-        )
+        assoc = billing.count_plan_associations(plan_id)
+        fields = {
+            "name": name,
+            "description": description,
+            "price": float(price.replace(",", ".")),
+            "days": int(days),
+        }
+        if assoc["total"] == 0:
+            # Plan no está en uso: admitir cambios estructurales también
+            fields["currency"] = currency
+            fields["is_active"] = bool(is_active)
+            if sort_order.strip():
+                fields["sort_order"] = int(sort_order)
+        billing.update_plan(plan_id, **fields)
         events.log("plan_updated", "settings", actor=user,
                    details=f"plan_id={plan_id}", ip=_client_ip(request))
         _flash(request, "Plan actualizado.", "success")
@@ -1540,7 +1550,7 @@ def plans_delete(
         events.log("plan_deleted", "settings", actor=user,
                    details=f"plan_id={plan_id}", severity="warn",
                    ip=_client_ip(request))
-        _flash(request, "Plan eliminado (o desactivado si tenía pagos).", "success")
+        _flash(request, "Plan eliminado.", "success")
     except billing.BillingError as e:
         _flash(request, str(e), "error")
     return RedirectResponse("/settings/plans", status_code=303)
