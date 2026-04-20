@@ -345,6 +345,32 @@ label small {
   .form-grid-2 { grid-template-columns: 1fr; }
 }
 
+/* === Toggle card: checkbox grande con label + descripcion visible === */
+.toggle-card {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 14px 0 4px;
+}
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  cursor: pointer;
+}
+.toggle-row input[type="checkbox"] {
+  width: 20px; height: 20px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.toggle-text { flex: 1; min-width: 0; }
+.toggle-text strong { display: block; margin-bottom: 4px; }
+.toggle-text small { display: block; line-height: 1.5; }
+
 .form-section {
   font-size: .8rem;
   text-transform: uppercase;

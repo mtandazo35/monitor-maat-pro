@@ -1,6 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Red y dominios · MonitorMaat Admin{% endblock %}
 {% block content %}
+<style>
+  .https-toggle {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 16px 0 4px;
+  }
+  .https-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .https-toggle-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 2px 0 0;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .https-toggle-text { flex: 1; min-width: 0; }
+  .https-toggle-text strong { display: block; margin-bottom: 4px; }
+  .https-toggle-text small { display: block; line-height: 1.5; }
+</style>
 <div class="row between">
   <h1>🌐 Red y dominios</h1>
 </div>
@@ -32,10 +58,21 @@
       <small class="muted">Para avisos de expiración de cert. No se publica.</small>
     </label>
 
-    <label class="row" style="align-items:center;gap:10px;margin-top:6px">
-      <input type="checkbox" name="use_https" value="1" {% if cfg.use_https %}checked{% endif %}>
-      <span>Mostrar URLs como HTTPS en el panel</span>
-    </label>
+    <div class="https-toggle">
+      <label class="https-toggle-row">
+        <input type="checkbox" name="use_https" value="1" {% if cfg.use_https %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>Servir el panel y los tenants con HTTPS</strong>
+          <small class="muted">
+            Recomendado activado. Los URLs en el panel y en los avisos al cliente
+            (email, Telegram) se generan con <code>https://</code> y Caddy emite
+            certs SSL gratuitos via Let's Encrypt.
+            Solo desactivá si vas a probar sin certs (ej. desarrollo local
+            con HTTP en LAN).
+          </small>
+        </span>
+      </label>
+    </div>
 
     <div class="row" style="margin-top:16px">
       <button type="submit" class="primary">💾 Guardar y aplicar</button>

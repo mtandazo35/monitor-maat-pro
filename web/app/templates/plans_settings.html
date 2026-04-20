@@ -45,16 +45,28 @@
         </select>
       </label>
     </div>
-    <div class="form-grid-2">
-      <label>Días de cobertura
-        <input name="days" type="number" min="1" required value="30">
-      </label>
-      <label class="row" style="align-items:center;gap:8px">
+    <label>Días de cobertura
+      <input name="days" type="number" min="1" required value="30">
+      <small class="muted">Cuántos días suma al <code>paid_until</code> del cliente cuando paga este plan.</small>
+    </label>
+
+    <div class="toggle-card">
+      <label class="toggle-row">
         <input type="checkbox" name="is_active" value="1" checked>
-        <span>Activo (visible para clientes)</span>
+        <span class="toggle-text">
+          <strong>Plan activo (disponible para asignar)</strong>
+          <small class="muted">
+            Si está marcado, el plan aparece en el selector de "Asignar plan al cliente"
+            (en <a href="/billing">/billing</a> al editar un cliente). Si lo desactivás,
+            queda guardado pero <strong>no se puede asignar a clientes nuevos</strong>.
+            Los clientes que ya lo tienen asignado siguen pagándolo normal — no se rompe nada.
+            Útil para retirar planes viejos sin perder el historial.
+          </small>
+        </span>
       </label>
     </div>
-    <div class="row">
+
+    <div class="row" style="margin-top:14px">
       <button type="submit" class="primary">Crear plan</button>
     </div>
   </form>
@@ -67,41 +79,43 @@
   {% else %}
     {# Desktop: tabla con inputs inline #}
     <div class="desktop-only tbl-wrap">
-      <table class="tbl">
+      <table class="tbl plans-tbl">
         <thead>
           <tr>
             <th>Orden</th><th>Nombre</th><th>Descripción</th>
-            <th>Precio</th><th>Días</th><th>Activo</th><th></th>
+            <th>Precio</th><th>Días</th><th>Activo</th><th>Acciones</th>
           </tr>
         </thead>
         <tbody>
           {% for p in plans %}
           <tr>
             <form method="post" action="/settings/plans/{{ p.id }}/edit">
-              <td><input type="number" name="sort_order" value="{{ p.sort_order }}" style="width:5em"></td>
-              <td><input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em"></td>
-              <td><input name="description" value="{{ p.description or '' }}" maxlength="200"></td>
-              <td>
-                <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required style="width:6em">
-                <select name="currency" style="width:5em">
-                  {% for c in ['USD','EUR'] %}
-                  <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
-                  {% endfor %}
-                </select>
+              <td style="vertical-align:middle"><input type="number" name="sort_order" value="{{ p.sort_order }}" style="width:4.5em"></td>
+              <td style="vertical-align:middle"><input name="name" value="{{ p.name }}" required maxlength="40" style="width:10em"></td>
+              <td style="vertical-align:middle"><input name="description" value="{{ p.description or '' }}" maxlength="200"></td>
+              <td style="vertical-align:middle">
+                <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap">
+                  <input name="price" type="number" min="0" step="0.01" value="{{ p.price }}" required style="width:6em">
+                  <select name="currency" style="width:5em">
+                    {% for c in ['USD','EUR'] %}
+                    <option value="{{ c }}" {% if p.currency == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
               </td>
-              <td><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:5em"></td>
-              <td>
-                <label class="row" style="align-items:center;gap:6px;justify-content:center">
-                  <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}>
-                </label>
+              <td style="vertical-align:middle"><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:4.5em"></td>
+              <td style="vertical-align:middle;text-align:center">
+                <input type="checkbox" name="is_active" value="1" {% if p.is_active %}checked{% endif %}
+                       style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
               </td>
-              <td class="row" style="gap:6px">
-                <button type="submit" class="btn small primary">Guardar</button>
+              <td style="vertical-align:middle">
+                <div style="display:inline-flex;gap:8px;flex-wrap:nowrap">
+                  <button type="submit" class="btn small primary">Guardar</button>
             </form>
-                <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline"
-                      >
-                  <button type="submit" class="btn small warn">Borrar</button>
-                </form>
+                  <form method="post" action="/settings/plans/{{ p.id }}/delete" class="inline">
+                    <button type="submit" class="btn small warn">Borrar</button>
+                  </form>
+                </div>
               </td>
           </tr>
           {% endfor %}
