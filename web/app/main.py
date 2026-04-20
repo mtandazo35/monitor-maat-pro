@@ -485,6 +485,7 @@ def api_tenant_detail(name: str, user: dict = Depends(current_user)):
     tenant["ovpn_status"] = svc.container_status(f"openvpn-{tenant['name']}")
     tenant["kuma_status"] = svc.container_status(f"kuma-{tenant['name']}")
     tenant["kuma_url"] = svc.kuma_url(tenant)
+    tenant["domain"] = svc.tenant_domain(tenant)
     return JSONResponse(
         {"tenant": tenant, "users": users_list},
         headers={"Cache-Control": "no-store"},

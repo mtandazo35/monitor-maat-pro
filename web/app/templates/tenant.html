@@ -18,6 +18,7 @@
       <dt v-if="role === 'admin'">Empresa</dt><dd v-if="role === 'admin'"><span class="sk-inline" style="min-width:8em"></span></dd>
       <dt>Slot</dt><dd><span class="sk-inline" style="min-width:2em"></span></dd>
       <dt>IP pública</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
+      <dt>Dominio</dt><dd><span class="sk-inline" style="min-width:14em"></span></dd>
       <dt>OpenVPN</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
       <dt>Kuma</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
       <dt>Subred VPN</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
@@ -33,6 +34,18 @@
       </template>
       <dt>Slot</dt><dd v-text="tenant.slot"></dd>
       <dt>IP pública</dt><dd><code v-text="tenant.public_ip"></code></dd>
+      <dt>Dominio</dt>
+      <dd>
+        <template v-if="tenant.domain">
+          <a :href="tenant.kuma_url" target="_blank" rel="noopener">
+            <strong v-text="tenant.domain"></strong> ↗
+          </a>
+        </template>
+        <template v-else>
+          <span class="muted">— sin dominio configurado</span>
+          <div class="muted small">Asigná un dominio raíz en <a href="/settings/network">Red y dominios</a> para que cada tenant tenga su subdominio.</div>
+        </template>
+      </dd>
       <dt>OpenVPN</dt>
       <dd>
         <code v-text="tenant.public_ip + ':' + tenant.vpn_port + '/tcp'"></code>
