@@ -1191,7 +1191,54 @@ h2 { margin: 0 0 12px 0; font-size: 1.15rem; }
   margin: 0 0 18px 0;
 }
 .card-narrow { max-width: 440px; margin: 40px auto; }
-.card.danger { border-color: #5a2222; background: #2a1818; }
+.card.danger {
+  --dg-bg: #2a1818;
+  --dg-border: #7a2e2e;
+  --dg-title: #ff8a80;
+  --dg-text: #f0c4c4;
+  --dg-code-bg: #3d1c1c;
+  --dg-code-border: #7a2e2e;
+  --dg-code-text: #ffb3aa;
+  --dg-input-bg: #1a0e0e;
+  --dg-input-border: #5a2222;
+  background: var(--dg-bg);
+  border-color: var(--dg-border);
+}
+:root.theme-light .card.danger {
+  --dg-bg: #fff5f5;
+  --dg-border: #f5a9a9;
+  --dg-title: #8a1515;
+  --dg-text: #5a1010;
+  --dg-code-bg: #ffe4e4;
+  --dg-code-border: #f5a9a9;
+  --dg-code-text: #8a1515;
+  --dg-input-bg: #ffffff;
+  --dg-input-border: #f5a9a9;
+}
+.card.danger h2 {
+  color: var(--dg-title);
+  margin: 0 0 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card.danger h2::before { content: "⚠"; font-size: 1.1em; }
+.card.danger p { color: var(--dg-text); margin: 0 0 16px 0; }
+.card.danger label { color: var(--dg-text); }
+.card.danger code {
+  background: var(--dg-code-bg);
+  color: var(--dg-code-text);
+  border: 1px solid var(--dg-code-border);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.card.danger input {
+  background: var(--dg-input-bg);
+  border-color: var(--dg-input-border);
+  color: var(--dg-text);
+}
+.card.danger input:focus { border-color: var(--c-red); }
 
 .muted { color: var(--muted); }
 
