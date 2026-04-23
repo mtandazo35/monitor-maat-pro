@@ -65,7 +65,7 @@ fi
 c_step "[2/5] Dependencias (curl, openssl)"
 need=()
 for pkg in curl openssl; do
-    command -v $pkg >/dev/null 2>&1 || need+=($pkg)
+    command -v "$pkg" >/dev/null 2>&1 || need+=("$pkg")
 done
 if [ ${#need[@]} -gt 0 ]; then
     DEBIAN_FRONTEND=noninteractive apt-get update -qq
@@ -149,7 +149,7 @@ cd "$INSTALL_DIR"
 docker compose up -d --remove-orphans 2>&1 | grep -E "Created|Started|Recreated" || true
 
 # Esperar a que el panel responda
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for _ in 1 2 3 4 5 6 7 8 9 10; do
     sleep 1
     if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/login" 2>/dev/null | grep -q "200"; then
         c_green "  ✓ Panel respondiendo en http://127.0.0.1:8000"

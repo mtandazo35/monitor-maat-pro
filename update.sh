@@ -61,7 +61,7 @@ if [ "$DO_PULL" = "1" ]; then
         else
             BEFORE=$(git rev-parse HEAD 2>/dev/null || echo "none")
             git fetch origin 2>&1 | tail -3
-            REMOTE=$(git rev-parse @{u} 2>/dev/null || echo "$BEFORE")
+            REMOTE=$(git rev-parse '@{u}' 2>/dev/null || echo "$BEFORE")
             if [ "$BEFORE" = "$REMOTE" ]; then
                 c_green "  ✓ ya estás al día"
             else
