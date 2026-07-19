@@ -3,6 +3,7 @@ import json
 import urllib.request
 from typing import Optional
 
+import crypto
 import settings_service
 
 
@@ -89,7 +90,7 @@ def send_user(user: Optional[dict], text: str, event_key: Optional[str] = None) 
     if not user:
         return False
     chat_id = (user.get("telegram_chat_id") or "").strip()
-    user_token = (user.get("telegram_bot_token") or "").strip()
+    user_token = (crypto.decrypt(user.get("telegram_bot_token")) or "").strip()
     if not chat_id or not user_token:
         return False
     if event_key and event_key in _user_off_set(user):

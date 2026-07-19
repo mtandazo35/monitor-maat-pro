@@ -18,7 +18,7 @@ services:
       VPN_PROTO: "tcp"
     ports:
       - "{{ tenant.vpn_port }}:{{ tenant.vpn_port }}/tcp"
-      - "{{ tenant.kuma_port }}:3001"
+      - "{{ kuma_bind | default('0.0.0.0') }}:{{ tenant.kuma_port }}:3001"
     volumes:
       - {{ base_path }}/tenants/{{ tenant.name }}/openvpn:/etc/openvpn
 

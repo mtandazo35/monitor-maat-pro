@@ -10,8 +10,16 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import config
 import auth
+import crypto
 import db
 import tenant_service as svc
+
+# SESSION_SECRET fuerte: si el env está ausente o quedó en el placeholder débil,
+# usamos una clave aleatoria persistida en el volumen (evita firmar cookies con un
+# secreto predecible = auth-bypass como admin).
+_SESSION_SECRET = config.SESSION_SECRET
+if (not _SESSION_SECRET) or _SESSION_SECRET == "change-me-please-32chars-minimum":
+    _SESSION_SECRET = crypto.session_secret_fallback()
 
 # Tamaños de página permitidos para listados
 ALLOWED_PAGE_SIZES = (10, 15, 20, 50, 100)
@@ -80,7 +88,7 @@ app.add_middleware(security.SecurityHeadersMiddleware)
 # Secure flag se activa cuando SECURE_COOKIES=1 en env (HTTPS atrás).
 app.add_middleware(
     SessionMiddleware,
-    secret_key=config.SESSION_SECRET,
+    secret_key=_SESSION_SECRET,
     https_only=security.secure_cookies_enabled(),
     # 'lax' (no 'strict'): permite enviar cookie en navigation top-level
     # GET incluyendo después del 303 redirect post-login (que con 'strict'
@@ -1821,7 +1829,7 @@ async def me_telegram_prefs(
 @app.post("/me/telegram/test")
 def me_telegram_test(request: Request, user: dict = Depends(current_user)):
     chat_id = (user.get("telegram_chat_id") or "").strip()
-    user_token = (user.get("telegram_bot_token") or "").strip()
+    user_token = (crypto.decrypt(user.get("telegram_bot_token")) or "").strip()
     if not chat_id or not user_token:
         _flash(request, "Cargá tu bot token Y tu chat_id y guardá antes de testear.", "error")
         return RedirectResponse("/me/telegram", status_code=303)

@@ -1,6 +1,7 @@
 from typing import Optional
 
 import config
+import crypto
 from db import connect
 
 
@@ -37,7 +38,7 @@ def get_smtp_config() -> dict:
         "host":     get("smtp_host",     config.SMTP_HOST),
         "port":     int(get("smtp_port", str(config.SMTP_PORT)) or 0),
         "user":     get("smtp_user",     config.SMTP_USER),
-        "password": get("smtp_password", config.SMTP_PASSWORD),
+        "password": crypto.decrypt(get("smtp_password", config.SMTP_PASSWORD)),
         "from":     get("smtp_from",     config.SMTP_FROM),
         "security": get("smtp_security", _env_default_security()),
         "public_url": get("public_url",  config.PUBLIC_URL),
@@ -53,7 +54,7 @@ def save_smtp_config(host: str, port: int, user: str, password: Optional[str],
     set_value("smtp_port", str(int(port)))
     set_value("smtp_user", user.strip())
     if password:
-        set_value("smtp_password", password)
+        set_value("smtp_password", crypto.encrypt(password))
     set_value("smtp_from", sender.strip())
     set_value("smtp_security", security)
     set_value("public_url", public_url.strip())
@@ -61,14 +62,14 @@ def save_smtp_config(host: str, port: int, user: str, password: Optional[str],
 
 def get_telegram_config() -> dict:
     return {
-        "bot_token": get("telegram_bot_token", ""),
+        "bot_token": crypto.decrypt(get("telegram_bot_token", "")),
         "admin_chat_id": get("telegram_admin_chat_id", ""),
     }
 
 
 def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
     if bot_token:
-        set_value("telegram_bot_token", bot_token.strip())
+        set_value("telegram_bot_token", crypto.encrypt(bot_token.strip()))
     set_value("telegram_admin_chat_id", admin_chat_id.strip())
 
 
@@ -145,7 +146,7 @@ def save_billing_config(suspension_time: str) -> None:
 
 def get_payphone_config() -> dict:
     return {
-        "token": get("payphone_token", ""),
+        "token": crypto.decrypt(get("payphone_token", "")),
         "store_id": get("payphone_store_id", ""),
         "api_url": get("payphone_api_url", "https://pay.payphonetodoesposible.com"),
         "public_url": get("public_url", ""),
@@ -160,7 +161,7 @@ def save_payphone_config(
 ) -> None:
     """Guarda config PayPhone. Si token es None/vacío, mantiene el anterior."""
     if token:
-        set_value("payphone_token", token.strip())
+        set_value("payphone_token", crypto.encrypt(token.strip()))
     set_value("payphone_store_id", store_id.strip())
     if api_url.strip():
         set_value("payphone_api_url", api_url.strip())

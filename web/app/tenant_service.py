@@ -11,6 +11,7 @@ from typing import Optional
 from jinja2 import Template
 
 import config
+import crypto
 from db import connect, now_iso
 
 
@@ -71,7 +72,11 @@ def _compose_file(name: str) -> Path:
 def _render_compose(tenant: dict) -> str:
     template_text = config.COMPOSE_TEMPLATE.read_text(encoding="utf-8")
     template = Template(template_text, keep_trailing_newline=True)
-    return template.render(tenant=tenant, base_path=str(config.BASE_PATH))
+    return template.render(
+        tenant=tenant,
+        base_path=str(config.BASE_PATH),
+        kuma_bind=config.KUMA_BIND,
+    )
 
 
 def tenant_domain(tenant: dict) -> str:
@@ -319,7 +324,12 @@ def list_vpn_users(tenant_id: int) -> list[dict]:
             "SELECT * FROM vpn_users WHERE tenant_id = ? ORDER BY id",
             (tenant_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["password"] = crypto.decrypt(d.get("password"))  # cifrada en reposo
+        out.append(d)
+    return out
 
 
 def _next_vpn_ip(tenant: dict) -> str:
@@ -381,11 +391,13 @@ def add_vpn_user(tenant: dict) -> dict:
             INSERT INTO vpn_users (tenant_id, username, password, ip, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (tenant["id"], username, password, ip, now_iso()),
+            (tenant["id"], username, crypto.encrypt(password), ip, now_iso()),
         )
         user_id = cur.lastrowid
         row = con.execute("SELECT * FROM vpn_users WHERE id = ?", (user_id,)).fetchone()
-    return dict(row)
+    d = dict(row)
+    d["password"] = password  # devolver la plana (para el flash/snippet al crear)
+    return d
 
 
 def get_vpn_user(user_id: int) -> Optional[dict]:
@@ -393,7 +405,11 @@ def get_vpn_user(user_id: int) -> Optional[dict]:
         row = con.execute(
             "SELECT * FROM vpn_users WHERE id = ?", (user_id,)
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    d = dict(row)
+    d["password"] = crypto.decrypt(d.get("password"))  # cifrada en reposo
+    return d
 
 
 def delete_vpn_user(tenant: dict, user_id: int) -> None:

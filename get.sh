@@ -108,7 +108,10 @@ services:
     environment:
       KUMAVPN_BASE_PATH: /opt/kumavpn
     ports:
-      - "${ADMIN_PORT:-8000}:8000"
+      # ADMIN_BIND=127.0.0.1 para exponer el panel SOLO al reverse proxy local
+      # (recomendado con NPM/Caddy en el mismo host). Default 0.0.0.0 = todas las
+      # interfaces (compat con setups previos / proxy remoto).
+      - "${ADMIN_BIND:-0.0.0.0}:${ADMIN_PORT:-8000}:8000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/kumavpn:/opt/kumavpn
@@ -134,6 +137,14 @@ ADMIN_USER=admin
 ADMIN_PASSWORD_HASH=$HASH_ESC
 SESSION_SECRET=$SECRET
 ADMIN_PORT=8000
+# Exposicion del panel. 0.0.0.0 = todas las interfaces (default). Detras de un
+# reverse proxy (NPM/Caddy) en el MISMO host, poner 127.0.0.1 para no exponer :8000.
+ADMIN_BIND=0.0.0.0
+# Cookie de sesion Secure. Poner 1 cuando el panel se sirve por HTTPS (proxy con TLS).
+SECURE_COOKIES=0
+# Exposicion de los Uptime Kuma de cada tenant. 0.0.0.0 = todas las interfaces
+# (default, compat). Con proxy local, 127.0.0.1 cierra el wizard sin-auth a internet.
+KUMA_BIND=0.0.0.0
 PUBLIC_IP=$PUB
 VPN_PORT_BASE=1193
 KUMA_PORT_BASE=3000

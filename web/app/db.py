@@ -195,6 +195,32 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # Migración: cifrar en reposo los secretos que estén en texto plano.
+        # Idempotente: si decrypt(x)==x → estaba plano → se cifra; si ya es token Fernet
+        # decrypt(x)!=x → se deja. Cubre claves VPN, secretos de settings y token Telegram.
+        try:
+            import crypto
+            for r in con.execute(
+                "SELECT id, password FROM vpn_users WHERE password IS NOT NULL AND password <> ''"
+            ).fetchall():
+                if crypto.decrypt(r["password"]) == r["password"]:
+                    con.execute("UPDATE vpn_users SET password = ? WHERE id = ?",
+                                (crypto.encrypt(r["password"]), r["id"]))
+            for key in ("payphone_token", "smtp_password", "telegram_bot_token"):
+                row = con.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+                if row and row["value"] and crypto.decrypt(row["value"]) == row["value"]:
+                    con.execute("UPDATE settings SET value = ? WHERE key = ?",
+                                (crypto.encrypt(row["value"]), key))
+            for r in con.execute(
+                "SELECT id, telegram_bot_token FROM users "
+                "WHERE telegram_bot_token IS NOT NULL AND telegram_bot_token <> ''"
+            ).fetchall():
+                if crypto.decrypt(r["telegram_bot_token"]) == r["telegram_bot_token"]:
+                    con.execute("UPDATE users SET telegram_bot_token = ? WHERE id = ?",
+                                (crypto.encrypt(r["telegram_bot_token"]), r["id"]))
+        except Exception:
+            pass
+
 
 @contextmanager
 def connect():

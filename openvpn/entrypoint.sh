@@ -95,6 +95,31 @@ echo 1 > /proc/sys/net/ipv4/ip_forward || true
 iptables -t nat -C POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null || \
     iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE
 
+# --- Aislamiento de red del tenant ---
+# Los clientes VPN SOLO pueden hablar entre sí dentro del túnel (hub: cliente↔cliente
+# y LAN Mikrotik del mismo tenant). Se BLOQUEA cualquier salida del túnel hacia el
+# host, internet, otros tenants o la red del servidor → evita pivoteo y accesos
+# SSH/Telnet/SNMP/etc. contra el server. NO afecta a Uptime Kuma: comparte el netns
+# del contenedor y su tráfico de monitoreo es local (OUTPUT/INPUT), no FORWARD.
+# Idempotente (-C || -A).
+echo "[setup] Aislamiento de red (FORWARD/INPUT desde tun0)..."
+# retorno de conexiones ya establecidas (necesario para el hub y para Kuma)
+iptables -C FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# tráfico intra-túnel permitido (cliente↔cliente, LAN Mikrotik)
+iptables -C FORWARD -i tun0 -o tun0 -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -i tun0 -o tun0 -j ACCEPT
+# todo lo demás que entre por el túnel y quiera SALIR del túnel → DROP
+iptables -C FORWARD -i tun0 -j DROP 2>/dev/null || \
+    iptables -A FORWARD -i tun0 -j DROP
+# proteger el propio contenedor desde el túnel: solo established + ICMP (ping gw)
+iptables -C INPUT -i tun0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -i tun0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -C INPUT -i tun0 -p icmp -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -i tun0 -p icmp -j ACCEPT
+iptables -C INPUT -i tun0 -j DROP 2>/dev/null || \
+    iptables -A INPUT -i tun0 -j DROP
+
 echo "[run] Starting OpenVPN on ${VPN_PROTO}/${VPN_PORT} with tunnel ${IP_VPN}/${MASCARA_VPN}..."
 cd "$SERVER_DIR"
 exec openvpn --config server.conf --suppress-timestamps

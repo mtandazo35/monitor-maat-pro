@@ -15,6 +15,10 @@ ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "change-me-please-32chars-minimum")
 
+# Interfaz donde se publica el puerto Kuma de cada tenant. Default 0.0.0.0 (compat);
+# 127.0.0.1 lo cierra al reverse proxy local (evita exponer el wizard sin-auth).
+KUMA_BIND = os.environ.get("KUMA_BIND", "0.0.0.0").strip() or "0.0.0.0"
+
 PUBLIC_IP = os.environ.get("PUBLIC_IP", "").strip()
 
 VPN_PORT_BASE = int(os.environ.get("VPN_PORT_BASE", "1193"))

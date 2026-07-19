@@ -6,6 +6,7 @@ from typing import Optional
 import bcrypt
 
 import billing_service as billing
+import crypto
 from db import connect, now_iso
 
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{1,30}$")
@@ -269,7 +270,7 @@ def update_user(
         params.append(telegram_off.strip() or None)
     if telegram_bot_token is not None:
         fields.append("telegram_bot_token = ?")
-        params.append(telegram_bot_token.strip() or None)
+        params.append(crypto.encrypt(telegram_bot_token.strip()) or None)
     if tenant_quota is not None:
         if tenant_quota < 0:
             raise UserError("Quota inválida (debe ser ≥ 0).")
