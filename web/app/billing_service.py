@@ -463,17 +463,31 @@ def apply_payphone_confirmation(provider_tx_id: str, confirmation: dict) -> Opti
                     current = None
             base = current if current and current > today else today
             new_until = base + timedelta(days=int(payment["days"]))
-            con.execute(
+
+            # Validación defensiva del monto (PayPhone confirma en centavos; el row
+            # guarda dólares). Si no coincide, se ANOTA en notes — no se bloquea: el
+            # importe lo fija el botón de PayPhone y los días salen del row server-side.
+            note = payment.get("notes") or ""
+            got_cents = confirmation.get("amount")
+            exp_cents = round(float(payment["amount"]) * 100)
+            if got_cents is not None and abs(int(got_cents) - exp_cents) > 1:
+                note = (note + f" [ALERTA monto PayPhone: {got_cents}c != esperado {exp_cents}c]").strip()
+
+            # Transición ATÓMICA PENDING→Approved: el WHERE exige que siga PENDING.
+            # Si dos callbacks/refresh corren a la vez, solo UNO obtiene rowcount=1 y
+            # extiende paid_until → evita doble acreditación (pagó 30, se acreditan 60).
+            cur = con.execute(
                 """UPDATE payments SET
                        provider_status = ?, raw_response = ?, covers_until = ?,
-                       paid_at = ?
-                   WHERE id = ?""",
-                (status, raw_json, new_until.isoformat(), now_iso(), payment["id"]),
+                       paid_at = ?, notes = ?
+                   WHERE id = ? AND (provider_status IS NULL OR provider_status IN ('', 'PENDING'))""",
+                (status, raw_json, new_until.isoformat(), now_iso(), note, payment["id"]),
             )
-            con.execute(
-                "UPDATE users SET paid_until = ?, payment_warning_sent_for = NULL WHERE id = ?",
-                (new_until.isoformat(), payment["user_id"]),
-            )
+            if cur.rowcount == 1:
+                con.execute(
+                    "UPDATE users SET paid_until = ?, payment_warning_sent_for = NULL WHERE id = ?",
+                    (new_until.isoformat(), payment["user_id"]),
+                )
         else:
             con.execute(
                 "UPDATE payments SET provider_status = ?, raw_response = ? WHERE id = ?",
@@ -496,6 +510,7 @@ def last_payment(user_id: int) -> Optional[dict]:
     with connect() as con:
         row = con.execute(
             "SELECT * FROM payments WHERE user_id = ? AND amount > 0 "
+            "AND (provider = 'manual' OR provider_status = 'Approved') "
             "ORDER BY paid_at DESC LIMIT 1",
             (user_id,),
         ).fetchone()
@@ -503,11 +518,13 @@ def last_payment(user_id: int) -> Optional[dict]:
 
 
 def total_paid_by_currency(user_id: int) -> dict[str, float]:
-    """Suma total pagada agrupada por moneda. Excluye pagos de monto 0 (cortesías)."""
+    """Suma total pagada agrupada por moneda. Excluye monto 0 (cortesías) y pagos
+    PayPhone no aprobados (PENDING/Denied): solo cuenta manuales o Approved."""
     with connect() as con:
         rows = con.execute(
             "SELECT currency, SUM(amount) AS total FROM payments "
-            "WHERE user_id = ? AND amount > 0 GROUP BY currency",
+            "WHERE user_id = ? AND amount > 0 "
+            "AND (provider = 'manual' OR provider_status = 'Approved') GROUP BY currency",
             (user_id,),
         ).fetchall()
     return {r["currency"]: r["total"] for r in rows}

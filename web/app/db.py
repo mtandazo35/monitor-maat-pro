@@ -227,6 +227,9 @@ def connect():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
+    # Escrituras concurrentes esperan hasta 5s por el lock en vez de fallar con
+    # "database is locked" (ayuda a las transiciones atómicas de billing/tenants).
+    con.execute("PRAGMA busy_timeout = 5000")
     try:
         yield con
         con.commit()
