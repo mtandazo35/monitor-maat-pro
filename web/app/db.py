@@ -217,7 +217,7 @@ def init_db() -> None:
                 if crypto.decrypt(r["password"]) == r["password"]:
                     con.execute("UPDATE vpn_users SET password = ? WHERE id = ?",
                                 (crypto.encrypt(r["password"]), r["id"]))
-            for key in ("payphone_token", "smtp_password", "telegram_bot_token"):
+            for key in ("payphone_token", "smtp_password", "telegram_bot_token", "cf_api_token"):
                 row = con.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
                 if row and row["value"] and crypto.decrypt(row["value"]) == row["value"]:
                     con.execute("UPDATE settings SET value = ? WHERE key = ?",

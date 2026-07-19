@@ -80,6 +80,67 @@
   </form>
 </section>
 
+{# === Cloudflare — DNS automático === #}
+<section class="card">
+  <h2 class="form-section">☁ Cloudflare — DNS automático</h2>
+  <p class="muted">
+    Con esto activado, cuando creás una empresa el panel <strong>le da la orden a
+    Cloudflare</strong> de crear el subdominio apuntando a este VPS, y Caddy emite el
+    certificado solo. Al borrar la empresa, elimina el registro. No tocás DNS a mano.
+  </p>
+
+  <form method="post" action="/settings/cloudflare">
+    <div class="https-toggle">
+      <label class="https-toggle-row">
+        <input type="checkbox" name="cf_dns_enabled" value="1" {% if cf.enabled %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>Gestionar el DNS automáticamente con Cloudflare</strong>
+          <small class="muted">Crea/borra el registro A de cada tenant vía API al crear/borrar la empresa.</small>
+        </span>
+      </label>
+    </div>
+
+    <label style="margin-top:14px">Token de API de Cloudflare (scoped)
+      <input name="cf_api_token" type="password" autocomplete="off"
+             placeholder="{% if cf.has_token %}•••••••• guardado — dejá vacío para no cambiar{% else %}pegá el token acá{% endif %}">
+      <small class="muted">
+        Creá un token <strong>scoped</strong> en Cloudflare → <em>My Profile → API Tokens →
+        Edit zone DNS</em> → Zone Resources: tu zona → (recomendado) Client IP Filtering =
+        <code>{{ public_ip or 'IP_DEL_VPS' }}</code>. <strong>NO uses el Global API Key.</strong>
+        Se guarda <strong>cifrado</strong> en la DB y nunca se vuelve a mostrar. Al guardar se valida contra Cloudflare.
+      </small>
+    </label>
+
+    <div class="https-toggle" style="margin-top:12px">
+      <label class="https-toggle-row">
+        <input type="checkbox" name="cf_proxied" value="1" {% if cf.proxied %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>Proxied (nube naranja) — esconde la IP del VPS</strong>
+          <small class="muted">
+            Default <strong>desactivado</strong> (nube gris / DNS-only, que es lo que Caddy
+            necesita para emitir los certs por HTTP). Activá solo si Caddy está configurado
+            para sacar certs por DNS-01; si no, dejalo en gris.
+          </small>
+        </span>
+      </label>
+    </div>
+
+    <div class="row" style="margin-top:16px; gap:10px; align-items:center; flex-wrap:wrap">
+      <button type="submit" class="primary">💾 Guardar Cloudflare</button>
+      {% if cf.has_token %}<span class="role-pill role-admin">token guardado</span>{% endif %}
+      {% if cf.enabled %}<span class="role-pill role-admin">auto-DNS activo</span>{% else %}<span class="role-pill role-system">auto-DNS off</span>{% endif %}
+    </div>
+  </form>
+
+  {% if cf.has_token %}
+  <form method="post" action="/settings/cloudflare" style="margin-top:10px"
+        onsubmit="return confirm('¿Borrar el token de Cloudflare guardado? El auto-DNS quedará desactivado.')">
+    <input type="hidden" name="cf_clear" value="1">
+    <button type="submit" class="btn small warn">Borrar token guardado</button>
+  </form>
+  {% endif %}
+</section>
+
 {# === Estado del setup === #}
 <section class="card">
   <h2 class="form-section">Estado del setup</h2>
@@ -115,6 +176,9 @@
 {% if cfg.panel_domain or cfg.tenants_domain %}
 <section class="card">
   <h2 class="form-section">📡 Records DNS necesarios</h2>
+  {% if cf.enabled %}
+  <p class="muted small">✅ Con <strong>Cloudflare automático</strong> activado, los registros de cada tenant se crean/borran solos. Solo asegurate de que el registro del <strong>panel</strong> exista (se crea al guardar Cloudflare).</p>
+  {% endif %}
   <p class="muted">Configurá estos records en tu proveedor (Cloudflare, NameCheap, etc.):</p>
   <div class="tbl-wrap">
     <table class="tbl">

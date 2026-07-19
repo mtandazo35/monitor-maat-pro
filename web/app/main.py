@@ -38,6 +38,7 @@ import user_service as usr
 import billing_service as billing
 import payphone_service as payphone
 import caddy_service as caddy
+import cloudflare_service as cloudflare
 import email_service as mail
 import settings_service as settings
 import notify_service as notify
@@ -462,6 +463,18 @@ def new_tenant_submit(
         return RedirectResponse("/tenants/new", status_code=303)
 
     t = svc.get_tenant(name)
+    # Cloudflare: dar la orden de crear el registro DNS del subdominio del tenant
+    # apuntando a la IP del VPS (best-effort; si falla, el tenant igual queda creado).
+    dns_note = ""
+    try:
+        nc = settings.get_network_config()
+        if nc.get("tenants_domain"):
+            cloudflare.create_record(f"{name}.{nc['tenants_domain']}", t["public_ip"])
+    except cloudflare.CloudflareError as e:
+        dns_note = f" ⚠ DNS Cloudflare falló: {e}"
+        notify.send_admin(f"⚠️ Cloudflare DNS falló creando <code>{name}</code>: {e}")
+    except Exception:
+        pass
     # Auto-regenerar Caddyfile + reload (silencioso si Caddy no esta o no configurado)
     try:
         if caddy.is_configured():
@@ -483,7 +496,7 @@ def new_tenant_submit(
         f"Subred:  {t['vpn_subnet']}/24",
         event_key="tenant_created",
     )
-    _flash(request, f"Tenant '{name}' creado y levantado.", "success")
+    _flash(request, f"Tenant '{name}' creado y levantado.{dns_note}", "success")
     return RedirectResponse(f"/tenants/{name}", status_code=303)
 
 
@@ -674,6 +687,13 @@ def delete_tenant(
     owner = _tenant_owner(tenant)
     try:
         svc.delete_tenant(name)
+        # Cloudflare: borrar el registro DNS del subdominio del tenant (best-effort).
+        try:
+            nc = settings.get_network_config()
+            if nc.get("tenants_domain"):
+                cloudflare.delete_record(f"{name}.{nc['tenants_domain']}")
+        except Exception:
+            pass
         # Auto-regenerar Caddyfile + reload (silencioso si Caddy no esta o no configurado)
         try:
             if caddy.is_configured():
@@ -1370,6 +1390,7 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
         {
             "request": request, "user": user,
             "cfg": settings.get_network_config(),
+            "cf": {k: v for k, v in settings.get_cloudflare_config().items() if k != "token"},
             "tenants": svc.list_tenants(),
             "public_ip": config.PUBLIC_IP or "",
             "caddy_running": caddy.caddy_container_running(),
@@ -1406,6 +1427,48 @@ def network_settings_save(
             _flash(request, f"Configuración guardada pero Caddy no se aplicó: {msg}", "info")
     except ValueError as e:
         _flash(request, str(e), "error")
+    return RedirectResponse("/settings/network", status_code=303)
+
+
+@app.post("/settings/cloudflare")
+def cloudflare_settings_save(
+    request: Request,
+    cf_api_token: str = Form(""),
+    cf_dns_enabled: str = Form(""),
+    cf_proxied: str = Form(""),
+    cf_clear: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    enabled = bool(cf_dns_enabled)
+    proxied = bool(cf_proxied)
+    clear = bool(cf_clear)
+    # Si mandó un token nuevo, validarlo contra Cloudflare antes de guardarlo
+    if cf_api_token.strip() and not clear:
+        v = cloudflare.verify_token(cf_api_token)
+        if not v["ok"]:
+            _flash(request, f"Token de Cloudflare inválido: {v['msg']}", "error")
+            return RedirectResponse("/settings/network", status_code=303)
+    settings.save_cloudflare_config(
+        token=cf_api_token or None, enabled=enabled, proxied=proxied, clear_token=clear,
+    )
+    events.log("cloudflare_settings_saved", "settings", actor=user,
+               details=f"enabled={enabled} proxied={proxied} clear={clear}", ip=_client_ip(request))
+    # Si quedó habilitado, sincronizar el registro del panel + los de los tenants
+    # existentes (best-effort: no rompe si alguno falla).
+    if enabled and not clear:
+        nc = settings.get_network_config()
+        res = cloudflare.sync_all(
+            nc.get("panel_domain", ""), nc.get("tenants_domain", ""),
+            config.PUBLIC_IP or "", [t["name"] for t in svc.list_tenants()],
+        )
+        if isinstance(res, dict) and res.get("errors"):
+            _flash(request, "Cloudflare guardado. Algunos DNS fallaron: " + "; ".join(res["errors"][:3]), "info")
+        elif isinstance(res, dict) and res.get("ok"):
+            _flash(request, f"Cloudflare guardado y {len(res['ok'])} registro(s) DNS sincronizado(s).", "success")
+        else:
+            _flash(request, "Cloudflare guardado.", "success")
+    else:
+        _flash(request, "Configuración de Cloudflare guardada.", "success")
     return RedirectResponse("/settings/network", status_code=303)
 
 

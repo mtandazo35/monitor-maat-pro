@@ -144,6 +144,33 @@ def save_billing_config(suspension_time: str) -> None:
     set_value("suspension_time", s)
 
 
+def get_cloudflare_config() -> dict:
+    """Config de la integración DNS con Cloudflare. El token se guarda cifrado."""
+    tok = crypto.decrypt(get("cf_api_token", "")) or ""
+    return {
+        "enabled": get("cf_dns_enabled", "0") == "1",
+        "token": tok,
+        "has_token": bool(tok),
+        "proxied": get("cf_proxied", "0") == "1",  # nube naranja (default gris)
+    }
+
+
+def save_cloudflare_config(
+    token: Optional[str],
+    enabled: bool,
+    proxied: bool = False,
+    clear_token: bool = False,
+) -> None:
+    """Guarda config Cloudflare. Si token es None/vacío mantiene el anterior.
+    clear_token=True borra el token guardado."""
+    if clear_token:
+        set_value("cf_api_token", None)
+    elif token:
+        set_value("cf_api_token", crypto.encrypt(token.strip()))
+    set_value("cf_dns_enabled", "1" if enabled else "0")
+    set_value("cf_proxied", "1" if proxied else "0")
+
+
 def get_payphone_config() -> dict:
     return {
         "token": crypto.decrypt(get("payphone_token", "")),
