@@ -184,6 +184,17 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # Unicidad de IP VPN por tenant: evita que dos usuarios VPN del mismo tenant
+        # queden con la misma IP (ruteo roto). Si una DB vieja ya tiene duplicados el
+        # índice no se crea (se ignora) — no rompe el arranque.
+        try:
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_users_tenant_ip "
+                "ON vpn_users(tenant_id, ip)"
+            )
+        except Exception:
+            pass
+
         # Renumerar plans.sort_order a 1..N respetando orden actual.
         # Idempotente: si ya estan 1..N queda igual; si vienen de 0/duplicados los normaliza.
         try:

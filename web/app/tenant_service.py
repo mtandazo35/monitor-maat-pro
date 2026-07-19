@@ -2,6 +2,7 @@ import ipaddress
 import re
 import secrets
 import shutil
+import sqlite3
 import string
 import subprocess
 import urllib.request
@@ -184,44 +185,67 @@ def create_tenant(name: str, owner: dict) -> dict:
         elif quota == 0 or quota is None:
             raise ServiceError("Tu quota es 0. Pedile al admin que te asigne un cupo.")
 
-    slot = _allocate_slot()
     public_ip = _resolve_public_ip()
 
-    tenant = {
-        "name": name,
-        "slot": slot,
-        "vpn_port": config.VPN_PORT_BASE + slot,
-        "kuma_port": config.KUMA_PORT_BASE + slot,
-        "vpn_subnet": f"{config.VPN_SUBNET_PREFIX}.{slot}.0",
-        "vpn_mask": "255.255.255.0",
-        "docker_subnet": f"{config.DOCKER_SUBNET_PREFIX}.{slot}.0/24",
-        "public_ip": public_ip,
-        "created_at": now_iso(),
-    }
+    # Reservar slot + fila PRIMERO. El UNIQUE(slot) evita que dos create_tenant
+    # concurrentes tomen el mismo slot; si choca, se reintenta con otro slot y así
+    # NO quedan directorios/compose huérfanos (se crean recién tras reservar).
+    tenant = None
+    last_err = None
+    for _attempt in range(5):
+        slot = _allocate_slot()
+        cand = {
+            "name": name,
+            "slot": slot,
+            "vpn_port": config.VPN_PORT_BASE + slot,
+            "kuma_port": config.KUMA_PORT_BASE + slot,
+            "vpn_subnet": f"{config.VPN_SUBNET_PREFIX}.{slot}.0",
+            "vpn_mask": "255.255.255.0",
+            "docker_subnet": f"{config.DOCKER_SUBNET_PREFIX}.{slot}.0/24",
+            "public_ip": public_ip,
+            "created_at": now_iso(),
+        }
+        try:
+            with connect() as con:
+                con.execute(
+                    """
+                    INSERT INTO tenants
+                    (name, slot, vpn_port, kuma_port, vpn_subnet, vpn_mask,
+                     docker_subnet, public_ip, owner_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        cand["name"], cand["slot"], cand["vpn_port"],
+                        cand["kuma_port"], cand["vpn_subnet"], cand["vpn_mask"],
+                        cand["docker_subnet"], cand["public_ip"], owner["id"], cand["created_at"],
+                    ),
+                )
+            tenant = cand
+            break
+        except sqlite3.IntegrityError as e:
+            last_err = e  # slot (o name) lo tomó otro create concurrente → reintentar
+    if tenant is None:
+        raise ServiceError(f"No se pudo asignar slot para el tenant: {last_err}")
 
-    tdir = _tenant_dir(name)
-    (tdir / "openvpn").mkdir(parents=True, exist_ok=True)
-    (tdir / "kuma").mkdir(parents=True, exist_ok=True)
+    # A partir de acá el tenant ya está en DB: si crear archivos o levantar los
+    # contenedores falla, se hace ROLLBACK (borrar fila + directorio) para no dejar
+    # el tenant a medias.
+    try:
+        tdir = _tenant_dir(name)
+        (tdir / "openvpn").mkdir(parents=True, exist_ok=True)
+        (tdir / "kuma").mkdir(parents=True, exist_ok=True)
+        compose_text = _render_compose(tenant)
+        _compose_file(name).write_text(compose_text, encoding="utf-8")
+        compose_up(name)
+    except Exception:
+        try:
+            with connect() as con:
+                con.execute("DELETE FROM tenants WHERE name = ?", (name,))
+        except Exception:
+            pass
+        shutil.rmtree(_tenant_dir(name), ignore_errors=True)
+        raise
 
-    compose_text = _render_compose(tenant)
-    _compose_file(name).write_text(compose_text, encoding="utf-8")
-
-    with connect() as con:
-        con.execute(
-            """
-            INSERT INTO tenants
-            (name, slot, vpn_port, kuma_port, vpn_subnet, vpn_mask,
-             docker_subnet, public_ip, owner_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                tenant["name"], tenant["slot"], tenant["vpn_port"],
-                tenant["kuma_port"], tenant["vpn_subnet"], tenant["vpn_mask"],
-                tenant["docker_subnet"], tenant["public_ip"], owner["id"], tenant["created_at"],
-            ),
-        )
-
-    compose_up(name)
     return get_tenant(name)
 
 
@@ -312,10 +336,14 @@ def _docker_exec(container: str, cmd: list[str], input_data: Optional[str] = Non
 
 def _persist_pam(container: str) -> None:
     """Copia los archivos de auth del FS efímero al volumen persistente.
-    Necesario después de adduser/chpasswd/deluser para sobrevivir recreaciones."""
-    _docker_exec(container, ["sh", "-c",
+    Necesario después de adduser/chpasswd/deluser para sobrevivir recreaciones.
+    Si el cp falla, se PROPAGA el error: de lo contrario la operación reporta éxito
+    pero los usuarios PAM se pierden al recrear el contenedor (dejan de autenticar)."""
+    r = _docker_exec(container, ["sh", "-c",
         "mkdir -p /etc/openvpn/auth && "
         "cp /etc/passwd /etc/shadow /etc/group /etc/gshadow /etc/openvpn/auth/"])
+    if r.returncode != 0:
+        raise ServiceError(f"No se pudieron persistir los usuarios PAM: {r.stderr or r.stdout}")
 
 
 def list_vpn_users(tenant_id: int) -> list[dict]:
@@ -360,7 +388,6 @@ def add_vpn_user(tenant: dict) -> dict:
 
     username = _random_token(12)
     password = _random_token(12)
-    ip = _next_vpn_ip(tenant)
 
     r = _docker_exec(
         container,
@@ -381,20 +408,33 @@ def add_vpn_user(tenant: dict) -> dict:
 
     _persist_pam(container)
 
-    ccd = _tenant_dir(tenant["name"]) / "openvpn" / "UptimeKuma" / username
-    ccd.parent.mkdir(parents=True, exist_ok=True)
-    ccd.write_text(f"ifconfig-push {ip} {tenant['vpn_mask']}\n", encoding="utf-8")
-
-    with connect() as con:
-        cur = con.execute(
-            """
-            INSERT INTO vpn_users (tenant_id, username, password, ip, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (tenant["id"], username, crypto.encrypt(password), ip, now_iso()),
-        )
-        user_id = cur.lastrowid
-        row = con.execute("SELECT * FROM vpn_users WHERE id = ?", (user_id,)).fetchone()
+    # Selección de IP + INSERT con reintento: el UNIQUE(tenant_id, ip) hace que dos
+    # add_vpn_user concurrentes no compartan IP (antes ambos elegían la misma y los
+    # dos INSERT pasaban → CCD con ifconfig-push duplicado → ruteo roto). Si choca,
+    # se recalcula la IP libre (ya excluyendo la que tomó el otro) y se reintenta.
+    user_id = None
+    last_err = None
+    for _attempt in range(10):
+        ip = _next_vpn_ip(tenant)
+        ccd = _tenant_dir(tenant["name"]) / "openvpn" / "UptimeKuma" / username
+        ccd.parent.mkdir(parents=True, exist_ok=True)
+        ccd.write_text(f"ifconfig-push {ip} {tenant['vpn_mask']}\n", encoding="utf-8")
+        try:
+            with connect() as con:
+                cur = con.execute(
+                    """
+                    INSERT INTO vpn_users (tenant_id, username, password, ip, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (tenant["id"], username, crypto.encrypt(password), ip, now_iso()),
+                )
+                user_id = cur.lastrowid
+                row = con.execute("SELECT * FROM vpn_users WHERE id = ?", (user_id,)).fetchone()
+            break
+        except sqlite3.IntegrityError as e:
+            last_err = e  # IP (o username) tomada por un insert concurrente → reintentar
+    if user_id is None:
+        raise ServiceError(f"No se pudo asignar IP VPN al usuario: {last_err}")
     d = dict(row)
     d["password"] = password  # devolver la plana (para el flash/snippet al crear)
     return d
