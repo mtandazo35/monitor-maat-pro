@@ -24,3 +24,28 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/kumavpn:/opt/kumavpn
+
+  # Reverse proxy + TLS automático (Let's Encrypt) para el dominio del panel y los
+  # subdominios de cada tenant (Uptime Kuma). El panel escribe el Caddyfile en
+  # /opt/kumavpn/caddy/Caddyfile (caddy_service.py) y hace `caddy reload` acá. Sin
+  # dominios configurados el Caddyfile queda vacío y Caddy corre idle (no afecta el
+  # acceso por IP:puerto). Resuelve `kumavpn-web` por la red del compose y los Kuma
+  # de cada tenant por host.docker.internal (puertos publicados en el host).
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-monitormaat
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /opt/kumavpn/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

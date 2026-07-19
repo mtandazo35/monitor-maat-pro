@@ -75,7 +75,13 @@ c_green "  ✓ OK"
 
 # --- 3. Estructura ---
 c_step "[3/5] Preparar $INSTALL_DIR y $DATA_DIR"
-mkdir -p "$INSTALL_DIR" "$DATA_DIR/data" "$DATA_DIR/tenants"
+mkdir -p "$INSTALL_DIR" "$DATA_DIR/data" "$DATA_DIR/tenants" "$DATA_DIR/caddy"
+# Placeholder para que el bind-mount del Caddyfile sea un ARCHIVO (no un dir) y
+# Caddy arranque idle hasta que configures los dominios en "Red y dominios".
+[ -f "$DATA_DIR/caddy/Caddyfile" ] || cat > "$DATA_DIR/caddy/Caddyfile" <<'CADDYEOF'
+# Caddyfile generado automáticamente por MonitorMaat.
+# Vacío hasta que configures los dominios (panel/tenants) en "Red y dominios".
+CADDYEOF
 c_green "  ✓ Directorios creados"
 
 # --- 4. Pull de imágenes desde GHCR + tag local ---
@@ -89,6 +95,10 @@ docker pull "$REGISTRY/monitor-maat-openvpn:$TAG" 2>&1 | tail -2
 [ "${PIPESTATUS[0]}" -eq 0 ] || { c_red "  ERROR: falló el pull de monitor-maat-openvpn"; exit 1; }
 docker tag "$REGISTRY/monitor-maat-openvpn:$TAG" kumavpn/openvpn:latest
 c_green "  ✓ kumavpn/openvpn:latest"
+
+docker pull caddy:2-alpine 2>&1 | tail -2
+[ "${PIPESTATUS[0]}" -eq 0 ] || { c_red "  ERROR: falló el pull de caddy:2-alpine"; exit 1; }
+c_green "  ✓ caddy:2-alpine (reverse proxy + TLS de panel y tenants)"
 
 # Pre-pull de Kuma para que primer tenant arranque rápido
 echo "  Pre-pull louislam/uptime-kuma:1 (en background)..."
@@ -117,6 +127,28 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/kumavpn:/opt/kumavpn
+
+  # Reverse proxy + TLS automático (Let's Encrypt) para el dominio del panel y los
+  # subdominios de cada tenant (Uptime Kuma). El panel escribe /opt/kumavpn/caddy/
+  # Caddyfile y hace `caddy reload` acá. Sin dominios configurados corre idle.
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-monitormaat
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /opt/kumavpn/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
 EOF
 
 ENV_FILE="$INSTALL_DIR/.env"
