@@ -56,11 +56,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # CSP: 'unsafe-eval' es REQUERIDO porque Vue 3 con templates inline
         # usa new Function() para compilarlos en runtime. Sin esto los componentes
         # se quedan colgados en v-cloak y la pagina se ve en blanco.
-        # script-src 'self' sigue protegiendo contra inyeccion de scripts externos.
+        # Vue se sirve self-hosted desde /static (NO de CDN externo) → sin unpkg en
+        # script-src: todo el JS es 'self', cerrando el riesgo de cadena de suministro.
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
             "font-src 'self'; "
