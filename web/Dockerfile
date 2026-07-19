@@ -24,6 +24,10 @@ COPY compose-template.j2 /app/compose-template.j2
 
 EXPOSE 8000
 
+# El panel se considera sano si /login responde. Reinicia si queda colgado.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/login || exit 1
+
 # --proxy-headers: confía en X-Forwarded-Proto / X-Forwarded-For (necesario detrás
 # de Cloudflare o cualquier reverse proxy). --forwarded-allow-ips=* porque dentro
 # del container no sabemos la IP del proxy de antemano.

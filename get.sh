@@ -11,7 +11,7 @@
 #   RESET=1             curl ... | sudo bash      # regenerar credenciales aunque ya exista .env
 #   VERSION=v1.0.0      curl ... | sudo bash      # tag específico (default: latest)
 
-set -e
+set -eo pipefail
 
 INSTALL_DIR="/opt/monitor-maat"
 DATA_DIR="/opt/kumavpn"
@@ -127,7 +127,9 @@ if [ -f "$ENV_FILE" ] && grep -q "^ADMIN_PASSWORD_HASH=." "$ENV_FILE" && [ -z "$
 else
     [ -n "$RESET" ] && echo "  RESET activo → regenerando credenciales"
     ADMIN_PASS="${ADMIN_PASS:-$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 20)}"
-    HASH=$(docker run --rm kumavpn/web:latest python -c "import bcrypt,sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())" "$ADMIN_PASS")
+    # Password por STDIN (no por argv) para que no aparezca en `ps aux`/proc del host.
+    HASH=$(printf '%s' "$ADMIN_PASS" | docker run --rm -i kumavpn/web:latest \
+        python -c "import bcrypt,sys; print(bcrypt.hashpw(sys.stdin.buffer.read(), bcrypt.gensalt()).decode())")
     HASH_ESC=$(echo "$HASH" | sed 's/\$/\$\$/g')
     SECRET=$(openssl rand -hex 32)
     PUB="${PUBLIC_IP:-$(curl -s -4 --max-time 5 https://ip1.dynupdate.no-ip.com/ 2>/dev/null || hostname -I | awk '{print $1}')}"

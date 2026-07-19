@@ -6,7 +6,7 @@
 #   sudo ADMIN_PASS=miclave ./install.sh     # password admin específico
 #   sudo PUBLIC_IP=1.2.3.4 ./install.sh      # forzar IP pública (sin auto-detect)
 
-set -e
+set -eo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="/opt/kumavpn"
@@ -115,7 +115,9 @@ if [ -f "$ENV_FILE" ] && grep -q "^ADMIN_PASSWORD_HASH=." "$ENV_FILE" && [ -z "$
 else
     [ -n "$RESET" ] && echo "  RESET activo → regenerando credenciales"
     ADMIN_PASS="${ADMIN_PASS:-$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 20)}"
-    HASH=$(docker run --rm kumavpn/web:latest python -c "import bcrypt,sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())" "$ADMIN_PASS")
+    # Password por STDIN (no por argv) para que no aparezca en `ps aux`/proc del host.
+    HASH=$(printf '%s' "$ADMIN_PASS" | docker run --rm -i kumavpn/web:latest \
+        python -c "import bcrypt,sys; print(bcrypt.hashpw(sys.stdin.buffer.read(), bcrypt.gensalt()).decode())")
     HASH_ESC=$(echo "$HASH" | sed 's/\$/\$\$/g')
     SECRET=$(openssl rand -hex 32)
     PUB="${PUBLIC_IP:-$(curl -s -4 --max-time 5 https://ip1.dynupdate.no-ip.com/ 2>/dev/null || hostname -I | awk '{print $1}')}"

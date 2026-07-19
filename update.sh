@@ -9,7 +9,7 @@
 #   sudo ./update.sh --no-tenants       # solo panel
 #   sudo ./update.sh --no-pull          # solo rebuild/recreate (sin git pull / docker pull)
 
-set -e
+set -eo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="${KUMAVPN_BASE_PATH:-/opt/kumavpn}"
