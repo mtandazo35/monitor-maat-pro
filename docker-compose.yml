@@ -16,8 +16,11 @@ services:
       KUMA_PORT_BASE: ${KUMA_PORT_BASE:-3000}
       VPN_SUBNET_PREFIX: ${VPN_SUBNET_PREFIX:-100.64}
       DOCKER_SUBNET_PREFIX: ${DOCKER_SUBNET_PREFIX:-172.30}
+      SECURE_COOKIES: ${SECURE_COOKIES:-0}
+      KUMA_BIND: ${KUMA_BIND:-0.0.0.0}
     ports:
-      - "127.0.0.1:${ADMIN_PORT:-8000}:8000"
+      # ADMIN_BIND configurable; dev default 127.0.0.1 (usar 0.0.0.0 para acceso directo).
+      - "${ADMIN_BIND:-127.0.0.1}:${ADMIN_PORT:-8000}:8000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/kumavpn:/opt/kumavpn

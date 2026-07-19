@@ -127,6 +127,12 @@ ADMIN_USER=admin
 ADMIN_PASSWORD_HASH=$HASH_ESC
 SESSION_SECRET=$SECRET
 ADMIN_PORT=8000
+# Exposicion del panel. Dev default 127.0.0.1; 0.0.0.0 para acceso directo por IP.
+ADMIN_BIND=${ADMIN_BIND:-127.0.0.1}
+# Cookie de sesion Secure. 1 cuando el panel se sirve por HTTPS (proxy con TLS).
+SECURE_COOKIES=0
+# Exposicion de los Uptime Kuma de cada tenant. 127.0.0.1 cierra el wizard sin-auth.
+KUMA_BIND=${KUMA_BIND:-0.0.0.0}
 PUBLIC_IP=$PUB
 VPN_PORT_BASE=1193
 KUMA_PORT_BASE=3000
