@@ -6,7 +6,7 @@
 #   sudo ADMIN_PASS=miclave ./install.sh     # password admin específico
 #   sudo PUBLIC_IP=1.2.3.4 ./install.sh      # forzar IP pública (sin auto-detect)
 
-set -eo pipefail
+set -e
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="/opt/kumavpn"

@@ -9,7 +9,7 @@
 #   sudo ./update.sh --no-tenants       # solo panel
 #   sudo ./update.sh --no-pull          # solo rebuild/recreate (sin git pull / docker pull)
 
-set -eo pipefail
+set -e
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="${KUMAVPN_BASE_PATH:-/opt/kumavpn}"
@@ -74,8 +74,10 @@ if [ "$DO_PULL" = "1" ]; then
     else
         c_step "[1/4] docker pull desde GHCR"
         docker pull "$REGISTRY/monitor-maat-web:latest" 2>&1 | tail -2
+        [ "${PIPESTATUS[0]}" -eq 0 ] || { c_red "  ERROR: falló el pull de monitor-maat-web"; exit 1; }
         docker tag "$REGISTRY/monitor-maat-web:latest" kumavpn/web:latest
         docker pull "$REGISTRY/monitor-maat-openvpn:latest" 2>&1 | tail -2
+        [ "${PIPESTATUS[0]}" -eq 0 ] || { c_red "  ERROR: falló el pull de monitor-maat-openvpn"; exit 1; }
         docker tag "$REGISTRY/monitor-maat-openvpn:latest" kumavpn/openvpn:latest
         c_green "  ✓ imágenes actualizadas"
     fi

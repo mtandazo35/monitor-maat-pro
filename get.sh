@@ -11,7 +11,7 @@
 #   RESET=1             curl ... | sudo bash      # regenerar credenciales aunque ya exista .env
 #   VERSION=v1.0.0      curl ... | sudo bash      # tag específico (default: latest)
 
-set -eo pipefail
+set -e
 
 INSTALL_DIR="/opt/monitor-maat"
 DATA_DIR="/opt/kumavpn"
@@ -81,10 +81,12 @@ c_green "  ✓ Directorios creados"
 # --- 4. Pull de imágenes desde GHCR + tag local ---
 c_step "[4/5] Pull de imágenes desde $REGISTRY (tag: $TAG)"
 docker pull "$REGISTRY/monitor-maat-web:$TAG" 2>&1 | tail -2
+[ "${PIPESTATUS[0]}" -eq 0 ] || { c_red "  ERROR: falló el pull de monitor-maat-web (¿imagen privada? ¿tag inexistente?)"; exit 1; }
 docker tag "$REGISTRY/monitor-maat-web:$TAG" kumavpn/web:latest
 c_green "  ✓ kumavpn/web:latest"
 
 docker pull "$REGISTRY/monitor-maat-openvpn:$TAG" 2>&1 | tail -2
+[ "${PIPESTATUS[0]}" -eq 0 ] || { c_red "  ERROR: falló el pull de monitor-maat-openvpn"; exit 1; }
 docker tag "$REGISTRY/monitor-maat-openvpn:$TAG" kumavpn/openvpn:latest
 c_green "  ✓ kumavpn/openvpn:latest"
 
