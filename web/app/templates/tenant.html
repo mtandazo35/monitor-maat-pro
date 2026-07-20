@@ -122,15 +122,8 @@
                     </li>
                   </ul>
                   <span v-else class="muted">—</span>
-                  <button type="button" class="btn small" @click="toggleNetForm(u.id)"
-                          v-text="netFormOpen[u.id] ? '× Cancelar' : '+ Red'"></button>
+                  <button type="button" class="btn small" @click="openNetModal(u)">+ Red</button>
                 </div>
-                <form v-if="netFormOpen[u.id]"
-                      :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'"
-                      method="post" class="inline-form">
-                  <input name="cidr" placeholder="192.168.1.0/24" required>
-                  <button class="btn small">Agregar</button>
-                </form>
               </td>
               <td class="mk-cell">
                 <details v-for="(snippet, key) in u.mikrotik" :key="key" class="mk-ver">
@@ -180,17 +173,10 @@
                   </li>
                 </ul>
                 <span v-else class="muted">—</span>
-                <button type="button" class="btn small" @click="toggleNetForm(u.id)"
-                        v-text="netFormOpen[u.id] ? '× Cancelar' : '+ Red'"></button>
+                <button type="button" class="btn small" @click="openNetModal(u)">+ Red</button>
               </div>
             </dd>
           </dl>
-          <form v-if="netFormOpen[u.id]"
-                :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'"
-                method="post" class="inline-form">
-            <input name="cidr" placeholder="192.168.1.0/24" required>
-            <button class="btn small">Agregar</button>
-          </form>
           <details class="mk-details">
             <summary>Snippets de conexión</summary>
             <div v-for="(snippet, key) in u.mikrotik" :key="key" class="mk-ver">
@@ -221,6 +207,32 @@
       <button class="btn warn">Eliminar tenant</button>
     </form>
   </section>
+
+  {# === MODAL: Agregar red cliente === #}
+  <div v-if="netModal" class="net-modal-backdrop" @click.self="closeNetModal">
+    <div class="net-modal" role="dialog" aria-modal="true">
+      <div class="net-modal-head">
+        <h3 style="margin:0">➕ Agregar red cliente</h3>
+        <button type="button" class="modal-close" @click="closeNetModal" aria-label="Cerrar">×</button>
+      </div>
+      <div class="net-modal-body">
+        <p class="muted small" style="margin-top:0">
+          Usuario <code v-text="netModal.username"></code> · IP VPN <code v-text="netModal.ip"></code>
+        </p>
+        <form :action="'/tenants/' + tenantName + '/users/' + netModal.id + '/networks/new'" method="post">
+          <label>Red del cliente (formato CIDR)
+            <input id="net-cidr-input" name="cidr" placeholder="192.168.1.0/24" required
+                   autocomplete="off">
+            <small class="muted">La LAN detrás del Mikrotik/equipo que querés alcanzar a través de la VPN. Ej: <code>192.168.1.0/24</code></small>
+          </label>
+          <div class="row" style="margin-top:16px; gap:10px; justify-content:flex-end">
+            <button type="button" class="btn" @click="closeNetModal">Cancelar</button>
+            <button type="submit" class="btn primary">Agregar red</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="/static/vue.global.prod.js" defer></script>
@@ -239,11 +251,14 @@ window.addEventListener('DOMContentLoaded', () => {
       const error = ref(false);
       const tenant = ref(null);
       const users = ref([]);
-      const netFormOpen = ref({});
+      const netModal = ref(null);
 
-      function toggleNetForm(id) {
-        netFormOpen.value = { ...netFormOpen.value, [id]: !netFormOpen.value[id] };
+      function openNetModal(u) {
+        netModal.value = u;
+        setTimeout(() => { const el = document.getElementById('net-cidr-input'); if (el) el.focus(); }, 60);
       }
+      function closeNetModal() { netModal.value = null; }
+      function onKeydown(e) { if (e.key === 'Escape') closeNetModal(); }
 
       let timer = null;
       let inflight = null;
@@ -298,14 +313,16 @@ window.addEventListener('DOMContentLoaded', () => {
       onMounted(() => {
         start();
         document.addEventListener('visibilitychange', onVis);
+        document.addEventListener('keydown', onKeydown);
       });
       onBeforeUnmount(() => {
         stop();
         document.removeEventListener('visibilitychange', onVis);
+        document.removeEventListener('keydown', onKeydown);
         if (inflight) inflight.abort();
       });
 
-      return { loading, error, role, tenantName, tenant, users, netFormOpen, toggleNetForm, confirmUser, confirmNet, confirmDelete, copy };
+      return { loading, error, role, tenantName, tenant, users, netModal, openNetModal, closeNetModal, confirmUser, confirmNet, confirmDelete, copy };
     },
     delimiters: ['[[', ']]'],
   }).mount('#tenant-app');
@@ -316,6 +333,53 @@ window.addEventListener('DOMContentLoaded', () => {
   [v-cloak] { visibility: hidden; }
   .nets-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .nets-row .nets { margin: 0; }
+
+  /* ===== MODAL AGREGAR RED (mismo look que el modal de pagos) ===== */
+  .net-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, .65);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: modal-fade .15s ease-out;
+  }
+  @keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+  .net-modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 460px;
+    max-height: 90dvh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    animation: modal-slide .2s ease-out;
+  }
+  @keyframes modal-slide { from { transform: translateY(20px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+  .net-modal-head {
+    padding: 18px 22px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .net-modal-body { padding: 18px 22px 22px; }
+  .modal-close {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 36px; height: 36px;
+    font-size: 1.4rem; line-height: 1;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { background: var(--border); border-color: var(--accent); }
+  @media (max-width: 600px) {
+    .net-modal-backdrop { padding: 0; align-items: flex-end; }
+    .net-modal { max-width: 100%; max-height: 95dvh; border-radius: 14px 14px 0 0; }
+  }
   .sk-inline {
     display: inline-block;
     min-height: 1em;
