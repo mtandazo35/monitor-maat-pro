@@ -49,7 +49,7 @@
     <label>2. Dominio raíz para los <strong>tenants</strong> (Uptime Kuma)
       <input name="tenants_domain" value="{{ cfg.tenants_domain }}"
              placeholder="ej: kuma.midominio.com">
-      <small class="muted">Cada tenant queda en <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'tudominio.com' }}</code>. Requiere DNS wildcard.</small>
+      <small class="muted">Cada tenant queda en <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'tudominio.com' }}</code>. Con el auto-DNS de Cloudflare (abajo) los registros se crean solos; sin él, necesitás un DNS wildcard manual.</small>
     </label>
 
     <label>3. Email para Let's Encrypt
