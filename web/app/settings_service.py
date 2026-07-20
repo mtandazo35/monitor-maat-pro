@@ -82,13 +82,13 @@ def get_network_config() -> dict:
     - use_https: si los URLs mostrados usan https (default true)
 
     Si tenants_domain está vacío, los tenants siguen mostrándose con IP:puerto.
-    base_domain se mantiene como alias legacy de tenants_domain.
+    Instalaciones viejas guardaban la clave 'base_domain' — se lee como fallback
+    pero ya no se escribe.
     """
     tenants_domain = get("tenants_domain", get("base_domain", ""))
     return {
         "panel_domain": get("panel_domain", ""),
         "tenants_domain": tenants_domain,
-        "base_domain": tenants_domain,  # alias legacy
         "caddy_email": get("caddy_email", ""),
         "use_https": get("use_https", "1") == "1",
     }
@@ -117,7 +117,6 @@ def save_network_config(
 
     set_value("panel_domain", pd)
     set_value("tenants_domain", td)
-    set_value("base_domain", td)  # mantener alias para compat
     set_value("caddy_email", em)
     set_value("use_https", "1" if use_https else "0")
 

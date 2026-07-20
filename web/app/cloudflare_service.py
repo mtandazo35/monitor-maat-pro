@@ -69,17 +69,29 @@ def verify_token(token: str) -> dict:
         return {"ok": False, "msg": str(e)}
 
 
+# Cache en memoria (token, sufijo-candidato) -> (zone_id, zone_name). Evita
+# re-consultar /zones en cada alta/baja de tenant; al cambiar el token la key
+# cambia sola, y un restart del container lo limpia.
+_zone_cache: dict = {}
+
+
 def _zone_id_for(fqdn: str, token: str) -> tuple:
     """Resuelve (zone_id, zone_name) probando sufijos del fqdn: para
     'acme.kuma.midominio.com' prueba ese, luego 'kuma.midominio.com', luego
     'midominio.com' hasta que Cloudflare devuelva una zona."""
     labels = fqdn.strip(".").split(".")
-    for i in range(len(labels) - 1):
-        candidate = ".".join(labels[i:])
+    candidates = [".".join(labels[i:]) for i in range(len(labels) - 1)]
+    for candidate in candidates:
+        hit = _zone_cache.get((token, candidate))
+        if hit:
+            return hit
+    for candidate in candidates:
         q = urllib.parse.quote(candidate)
         res = _req("GET", f"/zones?name={q}&status=active", token).get("result") or []
         if res:
-            return res[0]["id"], res[0]["name"]
+            zone = (res[0]["id"], res[0]["name"])
+            _zone_cache[(token, candidate)] = zone
+            return zone
     raise CloudflareError(f"No encontré la zona en Cloudflare para '{fqdn}'. ¿El dominio está en esta cuenta?")
 
 

@@ -1383,6 +1383,27 @@ def plans_settings(request: Request, user: dict = Depends(current_admin)):
     )
 
 
+def _apply_network_stack() -> tuple[bool, str]:
+    """Pipeline único post-guardado: aplica Caddy y sincroniza DNS en Cloudflare
+    (si el auto-DNS está activo). Lo usan los dos forms de /settings/network y el
+    botón de reaplicar, para que dé igual desde cuál se guarde."""
+    msgs = []
+    ok, msg = caddy.apply()
+    msgs.append(msg)
+    nc = settings.get_network_config()
+    res = cloudflare.sync_all(
+        nc.get("panel_domain", ""), nc.get("tenants_domain", ""),
+        config.PUBLIC_IP or "", [t["name"] for t in svc.list_tenants()],
+    )
+    if isinstance(res, dict):
+        if res.get("errors"):
+            ok = False
+            msgs.append("DNS Cloudflare con errores: " + "; ".join(res["errors"][:3]))
+        elif res.get("ok"):
+            msgs.append(f"{len(res['ok'])} registro(s) DNS sincronizado(s) en Cloudflare.")
+    return ok, " · ".join(msgs)
+
+
 @app.get("/settings/network", response_class=HTMLResponse)
 def network_settings_form(request: Request, user: dict = Depends(current_admin)):
     return templates.TemplateResponse(
@@ -1419,12 +1440,12 @@ def network_settings_save(
         events.log("network_settings_saved", "settings", actor=user,
                    details=f"panel={panel_domain} tenants={tenants_domain}",
                    ip=_client_ip(request))
-        # Auto-aplicar al guardar si Caddy esta corriendo
-        ok, msg = caddy.apply()
+        # Pipeline único: Caddy + sync DNS Cloudflare (si está activo)
+        ok, msg = _apply_network_stack()
         if ok:
             _flash(request, f"Configuración guardada. {msg}", "success")
         else:
-            _flash(request, f"Configuración guardada pero Caddy no se aplicó: {msg}", "info")
+            _flash(request, f"Configuración guardada con avisos: {msg}", "info")
     except ValueError as e:
         _flash(request, str(e), "error")
     return RedirectResponse("/settings/network", status_code=303)
@@ -1453,20 +1474,10 @@ def cloudflare_settings_save(
     )
     events.log("cloudflare_settings_saved", "settings", actor=user,
                details=f"enabled={enabled} proxied={proxied} clear={clear}", ip=_client_ip(request))
-    # Si quedó habilitado, sincronizar el registro del panel + los de los tenants
-    # existentes (best-effort: no rompe si alguno falla).
+    # Mismo pipeline que el form de dominios: Caddy + sync DNS (best-effort).
     if enabled and not clear:
-        nc = settings.get_network_config()
-        res = cloudflare.sync_all(
-            nc.get("panel_domain", ""), nc.get("tenants_domain", ""),
-            config.PUBLIC_IP or "", [t["name"] for t in svc.list_tenants()],
-        )
-        if isinstance(res, dict) and res.get("errors"):
-            _flash(request, "Cloudflare guardado. Algunos DNS fallaron: " + "; ".join(res["errors"][:3]), "info")
-        elif isinstance(res, dict) and res.get("ok"):
-            _flash(request, f"Cloudflare guardado y {len(res['ok'])} registro(s) DNS sincronizado(s).", "success")
-        else:
-            _flash(request, "Cloudflare guardado.", "success")
+        ok, msg = _apply_network_stack()
+        _flash(request, f"Cloudflare guardado. {msg}", "success" if ok else "info")
     else:
         _flash(request, "Configuración de Cloudflare guardada.", "success")
     return RedirectResponse("/settings/network", status_code=303)
@@ -1474,8 +1485,8 @@ def cloudflare_settings_save(
 
 @app.post("/settings/network/apply")
 def network_apply_caddy(request: Request, user: dict = Depends(current_admin)):
-    """Reaplicar manualmente el Caddyfile (útil si se cambió algo fuera)."""
-    ok, msg = caddy.apply()
+    """Reaplicar manualmente Caddyfile + sync DNS (útil si se cambió algo fuera)."""
+    ok, msg = _apply_network_stack()
     events.log("caddy_apply", "settings", actor=user, details=msg[:200],
                severity="info" if ok else "warn", ip=_client_ip(request))
     _flash(request, msg, "success" if ok else "error")
@@ -1484,47 +1495,18 @@ def network_apply_caddy(request: Request, user: dict = Depends(current_admin)):
 
 @app.get("/settings/network/caddyfile", response_class=HTMLResponse)
 def network_caddyfile(request: Request, user: dict = Depends(current_admin)):
-    """Genera el Caddyfile completo para reverse proxy de todos los Kuma de tenants.
-    Devuelve text/plain para que el admin lo descargue/copie."""
-    cfg = settings.get_network_config()
-    base = cfg.get("base_domain", "").strip()
-    if not base:
-        from fastapi.responses import PlainTextResponse
+    """Descarga el Caddyfile REAL (el mismo que caddy_service escribe y aplica).
+    Antes este endpoint generaba una variante propia bare-metal (127.0.0.1 +
+    wildcard) que no coincidía con lo que corre en el container — ahora hay una
+    sola fuente de verdad."""
+    from fastapi.responses import PlainTextResponse
+    if not caddy.is_configured():
         return PlainTextResponse(
-            "# Configurá primero el dominio base en /settings/network\n",
+            "# Configurá primero los dominios en /settings/network\n",
             status_code=400,
         )
-    tenants = svc.list_tenants()
-    lines = [
-        f"# Caddyfile generado por MonitorMaat",
-        f"# Base domain: {base}",
-        f"# Total tenants: {len(tenants)}",
-        f"#",
-        f"# Instalar Caddy: apt install caddy",
-        f"# Mover este archivo a: /etc/caddy/Caddyfile",
-        f"# Reload: systemctl reload caddy",
-        f"#",
-        f"# Importante: en Cloudflare/DNS configurá un registro A wildcard:",
-        f"#   *.{base}  →  {config.PUBLIC_IP or 'IP_DEL_VPS'}",
-        f"# Y deshabilitá el proxy CF (nube gris) si Caddy maneja TLS.",
-        f"",
-    ]
-    # Bloque por tenant
-    for t in tenants:
-        lines.append(f"# Tenant: {t['name']} (slot {t['slot']})")
-        lines.append(f"{t['name']}.{base} {{")
-        lines.append(f"    reverse_proxy 127.0.0.1:{t['kuma_port']}")
-        lines.append(f"}}")
-        lines.append("")
-    # Bloque opcional para el panel admin en el dominio base
-    lines.append(f"# Panel MonitorMaat (acceso por dominio base)")
-    lines.append(f"{base} {{")
-    lines.append(f"    reverse_proxy 127.0.0.1:80")
-    lines.append(f"}}")
-    lines.append("")
-    from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
-        "\n".join(lines),
+        caddy.generate_caddyfile(),
         headers={
             "Content-Disposition": 'attachment; filename="Caddyfile"',
             "Content-Type": "text/plain; charset=utf-8",

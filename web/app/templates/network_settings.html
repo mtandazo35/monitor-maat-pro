@@ -88,6 +88,15 @@
     Cloudflare</strong> de crear el subdominio apuntando a este VPS, y Caddy emite el
     certificado solo. Al borrar la empresa, elimina el registro. No tocás DNS a mano.
   </p>
+  <p class="muted small">
+    ℹ No hay nada más que elegir acá: el <strong>dominio</strong> lo toma de
+    "Configurá tus dominios" (cada tenant queda en
+    <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'tenants_domain' }}</code>), la
+    <strong>zona</strong> de Cloudflare se detecta sola en la cuenta del token, y la
+    <strong>IP</strong> es la de este VPS (<code>{{ public_ip or 'IP_DEL_VPS' }}</code>).
+    {% if not cfg.tenants_domain %}<strong>⚠ Primero guardá el dominio de tenants arriba
+    — sin eso el auto-DNS no tiene qué crear.</strong>{% endif %}
+  </p>
 
   <form method="post" action="/settings/cloudflare">
     <div class="https-toggle">
@@ -175,11 +184,16 @@
 {# === DNS records === #}
 {% if cfg.panel_domain or cfg.tenants_domain %}
 <section class="card">
-  <h2 class="form-section">📡 Records DNS necesarios</h2>
+  <h2 class="form-section">📡 Records DNS</h2>
   {% if cf.enabled %}
-  <p class="muted small">✅ Con <strong>Cloudflare automático</strong> activado, los registros de cada tenant se crean/borran solos. Solo asegurate de que el registro del <strong>panel</strong> exista (se crea al guardar Cloudflare).</p>
-  {% endif %}
-  <p class="muted">Configurá estos records en tu proveedor (Cloudflare, NameCheap, etc.):</p>
+  <p class="muted">
+    ✅ <strong>Gestionados automáticamente por Cloudflare</strong>: el registro del panel
+    y el de cada tenant se crean/borran solos al guardar y al crear/borrar empresas
+    (no hace falta wildcard). Si algo quedó desincronizado, usá el botón
+    <strong>↻ Reaplicar</strong> de arriba.
+  </p>
+  {% else %}
+  <p class="muted">Configurá estos records a mano en tu proveedor DNS (Cloudflare, NameCheap, etc.) — o activá el auto-DNS de arriba y olvidate:</p>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
@@ -204,10 +218,11 @@
     </table>
   </div>
   <p class="muted small" style="margin-top:8px">
-    ⚠ Si usás Cloudflare con proxy (nube naranja): poné <strong>nube gris</strong> (DNS only)
-    para que Caddy maneje TLS directo. O cambiá a <strong>Full (strict)</strong> en
+    ⚠ Si tu DNS es Cloudflare con proxy (nube naranja): poné <strong>nube gris</strong>
+    (DNS only) para que Caddy emita los certs, o usá <strong>Full (strict)</strong> en
     SSL/TLS de CF si querés mantener el proxy.
   </p>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -249,12 +264,16 @@ docker run -d \
 </section>
 {% endif %}
 
-{# === Caddyfile preview === #}
+{# === Caddyfile preview (colapsado — detalle técnico) === #}
 {% if caddyfile_preview %}
 <section class="card">
-  <h2 class="form-section">📄 Caddyfile generado (preview)</h2>
-  <p class="muted small">Este es el archivo que el panel escribe a <code>/opt/kumavpn/caddy/Caddyfile</code> cada vez que cambia la config o se crean/borran tenants.</p>
-  <pre class="mk" style="max-height:400px;overflow:auto;font-size:.78rem">{{ caddyfile_preview }}</pre>
+  <details class="mk-details">
+    <summary>📄 Caddyfile generado (preview)</summary>
+    <div style="padding:8px 0">
+      <p class="muted small">Este es el archivo que el panel escribe a <code>/opt/kumavpn/caddy/Caddyfile</code> cada vez que cambia la config o se crean/borran tenants. También podés <a href="/settings/network/caddyfile">descargarlo</a>.</p>
+      <pre class="mk" style="max-height:400px;overflow:auto;font-size:.78rem">{{ caddyfile_preview }}</pre>
+    </div>
+  </details>
 </section>
 {% endif %}
 

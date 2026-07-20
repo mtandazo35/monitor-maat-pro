@@ -81,12 +81,12 @@ def _render_compose(tenant: dict) -> str:
 
 
 def tenant_domain(tenant: dict) -> str:
-    """Dominio asignado al tenant: <tenant>.<base_domain> si hay base_domain, si no "" """
+    """Dominio asignado al tenant: <tenant>.<tenants_domain> si hay dominio, si no "" """
     if not tenant:
         return ""
     try:
         import settings_service
-        base = settings_service.get_network_config().get("base_domain", "").strip()
+        base = settings_service.get_network_config().get("tenants_domain", "").strip()
         if base:
             return f"{tenant['name']}.{base}"
     except Exception:
@@ -96,7 +96,7 @@ def tenant_domain(tenant: dict) -> str:
 
 def kuma_url(tenant: dict) -> str:
     """URL pública del Uptime Kuma de un tenant.
-    Si hay base_domain configurado: https://<tenant>.<base_domain> (con HTTPS o HTTP).
+    Si hay tenants_domain configurado: https://<tenant>.<tenants_domain> (con HTTPS o HTTP).
     Si no: http://<public_ip>:<kuma_port> (default actual)."""
     if not tenant:
         return ""
