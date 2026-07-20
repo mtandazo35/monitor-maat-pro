@@ -45,6 +45,9 @@ services:
       - /opt/kumavpn/caddy/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+      # Certs wildcard emitidos por certbot (modo "SSL por API" en Red y dominios).
+      # Read-only: el Caddyfile los referencia como /certs/live/<dominio>/*.pem
+      - /opt/kumavpn/letsencrypt:/certs:ro
 
 volumes:
   caddy_data:

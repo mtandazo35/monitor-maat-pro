@@ -73,11 +73,33 @@ def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
     set_value("telegram_admin_chat_id", admin_chat_id.strip())
 
 
+# Modos SSL/DNS para el dominio de los TENANTS (el panel es SIEMPRE Caddy simple):
+#   caddy   — Caddy emite cert por subdominio (HTTP-01). DNS manual (wildcard o por-tenant).
+#   cf_auto — el panel crea/borra el registro A de cada tenant vía API Cloudflare;
+#             Caddy emite cert por subdominio (HTTP-01). Requiere nube GRIS.
+#   certbot — SSL por API: cert wildcard real (*.dominio) vía Certbot DNS-01 con la
+#             API de Cloudflare; un solo registro wildcard; tolera nube naranja.
+TENANTS_SSL_MODES = ("caddy", "cf_auto", "certbot")
+
+_DOMAIN_RE_STR = r"^[a-z0-9.-]+\.[a-z]{2,}$"
+
+
+def get_tenants_ssl_mode() -> str:
+    """Modo SSL/DNS de los tenants. Migración: instalaciones que tenían el
+    auto-DNS viejo activado (cf_dns_enabled=1) caen a 'cf_auto'."""
+    mode = get("tenants_ssl_mode", "")
+    if mode in TENANTS_SSL_MODES:
+        return mode
+    return "cf_auto" if get("cf_dns_enabled", "0") == "1" else "caddy"
+
+
 def get_network_config() -> dict:
     """Configuración de red/dominios.
-    - panel_domain: dominio del panel principal (ej. 'panel.midominio.com')
+    - panel_domain: dominio del panel admin (ej. 'panel.midominio.com') — SIEMPRE
+      servido por Caddy con HTTP-01; separado a propósito de los dominios de clientes.
     - tenants_domain: dominio raíz para los subdominios de tenants
       (ej. 'kuma.midominio.com', cada tenant queda en '<nombre>.kuma.midominio.com')
+    - tenants_ssl_mode: caddy | cf_auto | certbot (ver TENANTS_SSL_MODES)
     - caddy_email: email para Let's Encrypt (recibe avisos de expiración)
     - use_https: si los URLs mostrados usan https (default true)
 
@@ -89,36 +111,47 @@ def get_network_config() -> dict:
     return {
         "panel_domain": get("panel_domain", ""),
         "tenants_domain": tenants_domain,
+        "tenants_ssl_mode": get_tenants_ssl_mode(),
         "caddy_email": get("caddy_email", ""),
         "use_https": get("use_https", "1") == "1",
     }
 
 
-def save_network_config(
-    panel_domain: str,
-    tenants_domain: str,
-    caddy_email: str,
-    use_https: bool,
-) -> None:
+def save_panel_config(panel_domain: str, caddy_email: str, use_https: bool) -> None:
+    """Guarda la config del PANEL admin (dominio + email LE + https). El panel se
+    sirve siempre por Caddy (HTTP-01) — solo necesita su registro A apuntando al VPS."""
     import re
-    DOMAIN_RE = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
+    DOMAIN_RE = re.compile(_DOMAIN_RE_STR)
     EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
     pd = (panel_domain or "").strip().lower()
-    td = (tenants_domain or "").strip().lower()
     em = (caddy_email or "").strip()
 
     if pd and not DOMAIN_RE.match(pd):
         raise ValueError("Dominio del panel inválido. Formato 'panel.midominio.com'.")
-    if td and not DOMAIN_RE.match(td):
-        raise ValueError("Dominio de tenants inválido. Formato 'kuma.midominio.com'.")
     if em and not EMAIL_RE.match(em):
         raise ValueError("Email inválido para Let's Encrypt.")
 
     set_value("panel_domain", pd)
-    set_value("tenants_domain", td)
     set_value("caddy_email", em)
     set_value("use_https", "1" if use_https else "0")
+
+
+def save_tenants_config(tenants_domain: str, ssl_mode: str) -> None:
+    """Guarda la config de dominios de los TENANTS (clientes: Kuma + accesos)."""
+    import re
+    DOMAIN_RE = re.compile(_DOMAIN_RE_STR)
+
+    td = (tenants_domain or "").strip().lower()
+    if td and not DOMAIN_RE.match(td):
+        raise ValueError("Dominio de tenants inválido. Formato 'kuma.midominio.com'.")
+    if ssl_mode not in TENANTS_SSL_MODES:
+        raise ValueError(f"Modo SSL inválido: {ssl_mode}")
+
+    set_value("tenants_domain", td)
+    set_value("tenants_ssl_mode", ssl_mode)
+    # Mantener la flag vieja coherente para código/instalaciones que la lean.
+    set_value("cf_dns_enabled", "1" if ssl_mode == "cf_auto" else "0")
 
 
 def get_billing_config() -> dict:
@@ -144,29 +177,29 @@ def save_billing_config(suspension_time: str) -> None:
 
 
 def get_cloudflare_config() -> dict:
-    """Config de la integración DNS con Cloudflare. El token se guarda cifrado."""
+    """Config de la integración con la API de Cloudflare. El token se guarda cifrado.
+    `enabled` = el modo de tenants gestiona registros por-tenant (cf_auto).
+    El modo certbot también usa el token, pero solo para el wildcard + DNS-01."""
     tok = crypto.decrypt(get("cf_api_token", "")) or ""
     return {
-        "enabled": get("cf_dns_enabled", "0") == "1",
+        "enabled": get_tenants_ssl_mode() == "cf_auto",
         "token": tok,
         "has_token": bool(tok),
         "proxied": get("cf_proxied", "0") == "1",  # nube naranja (default gris)
     }
 
 
-def save_cloudflare_config(
+def save_cloudflare_token(
     token: Optional[str],
-    enabled: bool,
     proxied: bool = False,
     clear_token: bool = False,
 ) -> None:
-    """Guarda config Cloudflare. Si token es None/vacío mantiene el anterior.
-    clear_token=True borra el token guardado."""
+    """Guarda token/proxied de Cloudflare. Si token es None/vacío mantiene el
+    anterior. clear_token=True borra el token guardado."""
     if clear_token:
         set_value("cf_api_token", None)
     elif token:
         set_value("cf_api_token", crypto.encrypt(token.strip()))
-    set_value("cf_dns_enabled", "1" if enabled else "0")
     set_value("cf_proxied", "1" if proxied else "0")
 
 

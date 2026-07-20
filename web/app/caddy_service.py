@@ -26,11 +26,28 @@ def is_configured() -> bool:
 
 
 def generate_caddyfile() -> str:
-    """Genera el contenido completo del Caddyfile basado en config + tenants."""
+    """Genera el contenido completo del Caddyfile basado en config + tenants.
+
+    El PANEL va siempre con cert automático de Caddy (HTTP-01). Los TENANTS
+    dependen del modo:
+    - caddy / cf_auto → cert automático por subdominio (HTTP-01)
+    - certbot → cert wildcard emitido por certbot (DNS-01), referenciado con
+      `tls` desde /certs (mount read-only de /opt/kumavpn/letsencrypt)
+    """
     cfg = settings_service.get_network_config()
     panel_domain = cfg.get("panel_domain", "").strip()
     tenants_domain = cfg.get("tenants_domain", "").strip()
     email = cfg.get("caddy_email", "").strip()
+    ssl_mode = cfg.get("tenants_ssl_mode", "caddy")
+
+    # tls con el wildcard de certbot solo si el cert ya existe (si no, Caddy no
+    # arrancaría apuntando a archivos inexistentes — fallback a HTTP-01).
+    tls_line = ""
+    if ssl_mode == "certbot":
+        import certbot_service
+        if certbot_service.cert_exists():
+            fullchain, privkey = certbot_service.cert_paths_for_caddy()
+            tls_line = f"    tls {fullchain} {privkey}"
 
     lines: list[str] = [
         "# Caddyfile generado automáticamente por MonitorMaat",
@@ -47,7 +64,7 @@ def generate_caddyfile() -> str:
             "",
         ])
 
-    # Panel principal
+    # Panel principal (siempre cert automático de Caddy)
     if panel_domain:
         lines.extend([
             f"# Panel admin",
@@ -64,13 +81,18 @@ def generate_caddyfile() -> str:
         except Exception:
             tenants = []
         for t in tenants:
-            lines.extend([
+            block = [
                 f"# Tenant: {t['name']} (slot {t['slot']})",
                 f"{t['name']}.{tenants_domain} {{",
+            ]
+            if tls_line:
+                block.append(tls_line)
+            block.extend([
                 f"    reverse_proxy host.docker.internal:{t['kuma_port']}",
                 f"}}",
                 "",
             ])
+            lines.extend(block)
 
     return "\n".join(lines)
 

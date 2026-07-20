@@ -85,7 +85,7 @@ c_green "  ✓ curl, openssl OK"
 # --- 3. Estructura de datos ---
 
 c_step "[3/6] Preparar $DATA_DIR"
-mkdir -p "$DATA_DIR/data" "$DATA_DIR/tenants" "$DATA_DIR/caddy"
+mkdir -p "$DATA_DIR/data" "$DATA_DIR/tenants" "$DATA_DIR/caddy" "$DATA_DIR/letsencrypt"
 # Placeholder para que el bind-mount del Caddyfile sea un ARCHIVO (no un dir) y
 # Caddy arranque idle hasta que configures los dominios en "Red y dominios".
 [ -f "$DATA_DIR/caddy/Caddyfile" ] || cat > "$DATA_DIR/caddy/Caddyfile" <<'CADDYEOF'

@@ -75,7 +75,7 @@ c_green "  ✓ OK"
 
 # --- 3. Estructura ---
 c_step "[3/5] Preparar $INSTALL_DIR y $DATA_DIR"
-mkdir -p "$INSTALL_DIR" "$DATA_DIR/data" "$DATA_DIR/tenants" "$DATA_DIR/caddy"
+mkdir -p "$INSTALL_DIR" "$DATA_DIR/data" "$DATA_DIR/tenants" "$DATA_DIR/caddy" "$DATA_DIR/letsencrypt"
 # Placeholder para que el bind-mount del Caddyfile sea un ARCHIVO (no un dir) y
 # Caddy arranque idle hasta que configures los dominios en "Red y dominios".
 [ -f "$DATA_DIR/caddy/Caddyfile" ] || cat > "$DATA_DIR/caddy/Caddyfile" <<'CADDYEOF'
@@ -145,6 +145,8 @@ services:
       - /opt/kumavpn/caddy/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+      # Certs wildcard de certbot (modo "SSL por API" en Red y dominios), read-only
+      - /opt/kumavpn/letsencrypt:/certs:ro
 
 volumes:
   caddy_data:

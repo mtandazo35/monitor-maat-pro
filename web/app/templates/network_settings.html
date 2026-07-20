@@ -16,7 +16,8 @@
     margin: 0;
     cursor: pointer;
   }
-  .https-toggle-row input[type="checkbox"] {
+  .https-toggle-row input[type="checkbox"],
+  .https-toggle-row input[type="radio"] {
     width: 20px;
     height: 20px;
     margin: 2px 0 0;
@@ -26,36 +27,39 @@
   .https-toggle-text { flex: 1; min-width: 0; }
   .https-toggle-text strong { display: block; margin-bottom: 4px; }
   .https-toggle-text small { display: block; line-height: 1.5; }
+  .mode-radio { margin: 10px 0 0; }
 </style>
 <div class="row between">
   <h1>🌐 Red y dominios</h1>
 </div>
 
+{# ============================================================ #}
+{# 1. PANEL ADMIN — dominio propio, siempre servido por Caddy    #}
+{# ============================================================ #}
 <section class="card">
-  <h2 class="form-section">Configurá tus dominios</h2>
+  <h2 class="form-section">🖥 Dominio del panel admin</h2>
   <p class="muted">
-    Una sola vez. Después Caddy genera SSL automáticamente para el panel y para
-    cada subdominio de tenant. Cuando crees/borres tenants, el Caddyfile se
-    regenera y se aplica solo.
+    El dominio donde queda accesible <strong>este panel</strong>. Va siempre por
+    <strong>Caddy</strong> (cert SSL automático de Let's Encrypt). Separado a propósito
+    de los dominios de tus clientes (abajo).
   </p>
 
   <form method="post" action="/settings/network">
-    <label>1. Dominio del <strong>panel admin</strong>
+    <label>Dominio del panel
       <input name="panel_domain" value="{{ cfg.panel_domain }}"
              placeholder="ej: panel.midominio.com">
-      <small class="muted">El dominio donde queda accesible este panel (HTTPS automático).</small>
+      <small class="muted">
+        Necesita un registro <code>A</code> apuntando a este VPS:
+        <code>{{ cfg.panel_domain or 'panel.midominio.com' }}</code> →
+        <code>{{ public_ip or 'IP_DEL_VPS' }}</code> (creálo a mano en tu proveedor DNS,
+        en nube gris si usás Cloudflare).
+      </small>
     </label>
 
-    <label>2. Dominio raíz para los <strong>tenants</strong> (Uptime Kuma)
-      <input name="tenants_domain" value="{{ cfg.tenants_domain }}"
-             placeholder="ej: kuma.midominio.com">
-      <small class="muted">Cada tenant queda en <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'tudominio.com' }}</code>. Con el auto-DNS de Cloudflare (abajo) los registros se crean solos; sin él, necesitás un DNS wildcard manual.</small>
-    </label>
-
-    <label>3. Email para Let's Encrypt
+    <label>Email para Let's Encrypt
       <input name="caddy_email" type="email" value="{{ cfg.caddy_email }}"
              placeholder="tu@email.com">
-      <small class="muted">Para avisos de expiración de cert. No se publica.</small>
+      <small class="muted">Para avisos de expiración de cert (panel y tenants). No se publica.</small>
     </label>
 
     <div class="https-toggle">
@@ -65,76 +69,99 @@
           <strong>Servir el panel y los tenants con HTTPS</strong>
           <small class="muted">
             Recomendado activado. Los URLs en el panel y en los avisos al cliente
-            (email, Telegram) se generan con <code>https://</code> y Caddy emite
-            certs SSL gratuitos via Let's Encrypt.
-            Solo desactivá si vas a probar sin certs (ej. desarrollo local
-            con HTTP en LAN).
+            (email, Telegram) se generan con <code>https://</code>. Solo desactivá
+            si vas a probar sin certs (ej. desarrollo local con HTTP en LAN).
           </small>
         </span>
       </label>
     </div>
 
     <div class="row" style="margin-top:16px">
-      <button type="submit" class="primary">💾 Guardar y aplicar</button>
+      <button type="submit" class="primary">💾 Guardar panel</button>
     </div>
   </form>
 </section>
 
-{# === Cloudflare — DNS automático === #}
+{# ============================================================ #}
+{# 2. TENANTS (clientes) — dominio raíz + modo SSL/DNS           #}
+{# ============================================================ #}
 <section class="card">
-  <h2 class="form-section">☁ Cloudflare — DNS automático</h2>
+  <h2 class="form-section">👥 Dominios de tus clientes (tenants)</h2>
   <p class="muted">
-    Con esto activado, cuando creás una empresa el panel <strong>le da la orden a
-    Cloudflare</strong> de crear el subdominio apuntando a este VPS, y Caddy emite el
-    certificado solo. Al borrar la empresa, elimina el registro. No tocás DNS a mano.
+    Dominio raíz para los accesos de cada empresa (Uptime Kuma): cada tenant queda en
+    <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'kuma.midominio.com' }}</code>.
+    Elegí cómo se gestionan el DNS y el certificado SSL.
   </p>
-  {% if cfg.tenants_domain or cfg.panel_domain %}
-  <div class="https-toggle" style="margin-top:0">
-    <span class="https-toggle-text">
-      <strong>Dominios que va a gestionar</strong>
-      <small class="muted">
-        {% if cfg.tenants_domain %}
-        Tenants: <code>&lt;nombre&gt;.{{ cfg.tenants_domain }}</code>
-        (equivale al wildcard <code>*.{{ cfg.tenants_domain }}</code>)
-        → <code>{{ public_ip or 'IP_DEL_VPS' }}</code><br>
-        {% endif %}
-        {% if cfg.panel_domain %}
-        Panel: <code>{{ cfg.panel_domain }}</code> → <code>{{ public_ip or 'IP_DEL_VPS' }}</code><br>
-        {% endif %}
-        La <strong>zona</strong> de Cloudflare se detecta sola en la cuenta del token;
-        los registros se crean en <strong>nube gris</strong> salvo que actives Proxied.
-      </small>
-    </span>
-  </div>
-  {% else %}
-  <p class="muted small">
-    <strong>⚠ Primero guardá los dominios en "Configurá tus dominios" (arriba)</strong> —
-    de ahí toma este auto-DNS qué registros crear (cada tenant queda en
-    <code>&lt;nombre&gt;.&lt;dominio-de-tenants&gt;</code>, apuntando a la IP de este
-    VPS <code>{{ public_ip or 'IP_DEL_VPS' }}</code>). La zona de Cloudflare se detecta
-    sola en la cuenta del token.
-  </p>
-  {% endif %}
 
-  <form method="post" action="/settings/cloudflare">
-    <div class="https-toggle">
+  <form method="post" action="/settings/network/tenants">
+    <label>Dominio raíz de los tenants
+      <input name="tenants_domain" value="{{ cfg.tenants_domain }}"
+             placeholder="ej: kuma.midominio.com">
+    </label>
+
+    <div class="https-toggle mode-radio">
       <label class="https-toggle-row">
-        <input type="checkbox" name="cf_dns_enabled" value="1" {% if cf.enabled %}checked{% endif %}>
+        <input type="radio" name="ssl_mode" value="caddy"
+               {% if cfg.tenants_ssl_mode == 'caddy' %}checked{% endif %}>
         <span class="https-toggle-text">
-          <strong>Gestionar el DNS automáticamente con Cloudflare</strong>
-          <small class="muted">Crea/borra el registro A de cada tenant vía API al crear/borrar la empresa.</small>
+          <strong>1 · Solo Caddy (DNS manual)</strong>
+          <small class="muted">
+            Caddy emite un cert por subdominio (HTTP-01). Vos creás a mano el registro
+            wildcard <code>*.{{ cfg.tenants_domain or 'kuma.midominio.com' }}</code> →
+            <code>{{ public_ip or 'IP_DEL_VPS' }}</code> en tu proveedor DNS (nube gris
+            si es Cloudflare). No usa token de API.
+          </small>
         </span>
       </label>
     </div>
 
-    <label style="margin-top:14px">Token de API de Cloudflare (scoped)
+    <div class="https-toggle mode-radio">
+      <label class="https-toggle-row">
+        <input type="radio" name="ssl_mode" value="cf_auto"
+               {% if cfg.tenants_ssl_mode == 'cf_auto' %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>2 · Cloudflare — DNS automático</strong>
+          <small class="muted">
+            Al crear una empresa, el panel le da la orden a Cloudflare de crear el
+            registro A <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'kuma.midominio.com' }}</code>
+            → <code>{{ public_ip or 'IP_DEL_VPS' }}</code>; al borrarla, lo elimina.
+            Caddy emite el cert por subdominio (HTTP-01) — requiere nube <strong>gris</strong>.
+            Usa el token de API.
+          </small>
+        </span>
+      </label>
+    </div>
+
+    <div class="https-toggle mode-radio">
+      <label class="https-toggle-row">
+        <input type="radio" name="ssl_mode" value="certbot"
+               {% if cfg.tenants_ssl_mode == 'certbot' %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>3 · SSL por API — wildcard real (Certbot + Cloudflare DNS-01)</strong>
+          <small class="muted">
+            Un solo certificado wildcard <code>*.{{ cfg.tenants_domain or 'kuma.midominio.com' }}</code>
+            emitido por validación DNS (Certbot crea y borra el TXT temporal vía API en
+            segundos). El panel también crea el registro wildcard único y
+            <strong>renueva el cert solo</strong> cada ~60 días. Los tenants nuevos sirven
+            HTTPS al instante y <strong>funciona incluso con proxy naranja</strong>.
+            Usa el token de API.
+            {% if certbot_status.exists %}<br>✅ Cert wildcard emitido
+            ({{ certbot_status.issued_at }}) — renovación automática activa.{% endif %}
+          </small>
+        </span>
+      </label>
+    </div>
+
+    <label style="margin-top:14px">Token de API de Cloudflare (scoped) — para los modos 2 y 3
       <input name="cf_api_token" type="password" autocomplete="off"
              placeholder="{% if cf.has_token %}•••••••• guardado — dejá vacío para no cambiar{% else %}pegá el token acá{% endif %}">
       <small class="muted">
         Creá un token <strong>scoped</strong> en Cloudflare → <em>My Profile → API Tokens →
         Edit zone DNS</em> → Zone Resources: tu zona → (recomendado) Client IP Filtering =
         <code>{{ public_ip or 'IP_DEL_VPS' }}</code>. <strong>NO uses el Global API Key.</strong>
-        Se guarda <strong>cifrado</strong> en la DB y nunca se vuelve a mostrar. Al guardar se valida contra Cloudflare.
+        Se guarda <strong>cifrado</strong> en la DB y nunca se vuelve a mostrar. Al guardar
+        se valida contra Cloudflare. La <strong>zona</strong> se detecta sola en la cuenta
+        del token.
       </small>
     </label>
 
@@ -144,25 +171,33 @@
         <span class="https-toggle-text">
           <strong>Proxied (nube naranja) — esconde la IP del VPS</strong>
           <small class="muted">
-            Default <strong>desactivado</strong> (nube gris / DNS-only, que es lo que Caddy
-            necesita para emitir los certs por HTTP). Activá solo si Caddy está configurado
-            para sacar certs por DNS-01; si no, dejalo en gris.
+            Solo compatible con el modo <strong>3 · SSL por API</strong> (el cert se valida
+            por DNS, no por HTTP). En el modo 2 dejalo desactivado (nube gris) o Caddy no
+            podrá emitir los certs.
           </small>
         </span>
       </label>
     </div>
 
     <div class="row" style="margin-top:16px; gap:10px; align-items:center; flex-wrap:wrap">
-      <button type="submit" class="primary">💾 Guardar Cloudflare</button>
+      <button type="submit" class="primary">💾 Guardar y aplicar</button>
       {% if cf.has_token %}<span class="role-pill role-admin">token guardado</span>{% endif %}
-      {% if cf.enabled %}<span class="role-pill role-admin">auto-DNS activo</span>{% else %}<span class="role-pill role-system">auto-DNS off</span>{% endif %}
+      {% if cfg.tenants_ssl_mode == 'caddy' %}<span class="role-pill role-system">modo: solo Caddy</span>
+      {% elif cfg.tenants_ssl_mode == 'cf_auto' %}<span class="role-pill role-admin">modo: Cloudflare auto-DNS</span>
+      {% else %}<span class="role-pill role-admin">modo: SSL por API (wildcard)</span>{% endif %}
     </div>
+    <p class="muted small" style="margin-top:8px">
+      ⏳ Con el modo 3, el primer guardado tarda ~1 minuto (emisión del cert wildcard con
+      propagación DNS). Las siguientes veces es instantáneo.
+    </p>
   </form>
 
   {% if cf.has_token %}
-  <form method="post" action="/settings/cloudflare" style="margin-top:10px"
-        onsubmit="return confirm('¿Borrar el token de Cloudflare guardado? El auto-DNS quedará desactivado.')">
+  <form method="post" action="/settings/network/tenants" style="margin-top:10px"
+        onsubmit="return confirm('¿Borrar el token de Cloudflare guardado? Los modos 2 y 3 dejarán de funcionar.')">
     <input type="hidden" name="cf_clear" value="1">
+    <input type="hidden" name="tenants_domain" value="{{ cfg.tenants_domain }}">
+    <input type="hidden" name="ssl_mode" value="{{ cfg.tenants_ssl_mode }}">
     <button type="submit" class="btn small warn">Borrar token guardado</button>
   </form>
   {% endif %}
@@ -190,11 +225,23 @@
         <span class="muted small">— ver instrucciones más abajo</span>
       {% endif %}
     </dd>
+    {% if cfg.tenants_ssl_mode == 'certbot' %}
+    <dt>Cert wildcard</dt>
+    <dd>
+      {% if certbot_status.exists %}
+        <span class="role-pill role-admin">emitido {{ certbot_status.issued_at }}</span>
+        <span class="muted small">— renueva solo cada ~60 días</span>
+      {% else %}
+        <span class="role-pill role-system">pendiente</span>
+        <span class="muted small">— se emite al guardar con token válido</span>
+      {% endif %}
+    </dd>
+    {% endif %}
   </dl>
 
   {% if (cfg.panel_domain or cfg.tenants_domain) and caddy_running %}
   <form method="post" action="/settings/network/apply" style="margin-top:10px">
-    <button type="submit" class="btn">↻ Reaplicar Caddyfile manualmente</button>
+    <button type="submit" class="btn">↻ Reaplicar DNS + Caddyfile manualmente</button>
   </form>
   {% endif %}
 </section>
@@ -203,19 +250,10 @@
 {% if cfg.panel_domain or cfg.tenants_domain %}
 <section class="card">
   <h2 class="form-section">📡 Records DNS</h2>
-  {% if cf.enabled %}
-  <p class="muted">
-    ✅ <strong>Gestionados automáticamente por Cloudflare</strong>: el registro del panel
-    y el de cada tenant se crean/borran solos al guardar y al crear/borrar empresas
-    (no hace falta wildcard). Si algo quedó desincronizado, usá el botón
-    <strong>↻ Reaplicar</strong> de arriba.
-  </p>
-  {% else %}
-  <p class="muted">Configurá estos records a mano en tu proveedor DNS (Cloudflare, NameCheap, etc.) — o activá el auto-DNS de arriba y olvidate:</p>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
-        <tr><th>Tipo</th><th>Nombre</th><th>Valor</th></tr>
+        <tr><th>Tipo</th><th>Nombre</th><th>Valor</th><th>Gestión</th></tr>
       </thead>
       <tbody>
         {% if cfg.panel_domain %}
@@ -223,22 +261,41 @@
           <td><code>A</code></td>
           <td><code>{{ cfg.panel_domain }}</code></td>
           <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+          <td><span class="role-pill role-system">manual</span></td>
         </tr>
         {% endif %}
         {% if cfg.tenants_domain %}
+        {% if cfg.tenants_ssl_mode == 'caddy' %}
         <tr>
           <td><code>A</code></td>
           <td><code>*.{{ cfg.tenants_domain }}</code></td>
           <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+          <td><span class="role-pill role-system">manual</span></td>
         </tr>
+        {% elif cfg.tenants_ssl_mode == 'cf_auto' %}
+        <tr>
+          <td><code>A</code></td>
+          <td><code>&lt;tenant&gt;.{{ cfg.tenants_domain }}</code></td>
+          <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+          <td><span class="role-pill role-admin">automático (por tenant)</span></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td><code>A</code></td>
+          <td><code>*.{{ cfg.tenants_domain }}</code></td>
+          <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+          <td><span class="role-pill role-admin">automático (wildcard único)</span></td>
+        </tr>
+        {% endif %}
         {% endif %}
       </tbody>
     </table>
   </div>
+  {% if cfg.tenants_ssl_mode != 'certbot' %}
   <p class="muted small" style="margin-top:8px">
-    ⚠ Si tu DNS es Cloudflare con proxy (nube naranja): poné <strong>nube gris</strong>
-    (DNS only) para que Caddy emita los certs, o usá <strong>Full (strict)</strong> en
-    SSL/TLS de CF si querés mantener el proxy.
+    ⚠ Con Cloudflare, los registros de tenants van en <strong>nube gris</strong> (DNS only)
+    para que Caddy pueda emitir los certs. Si necesitás nube naranja, usá el modo
+    <strong>3 · SSL por API</strong>.
   </p>
   {% endif %}
 </section>
@@ -256,7 +313,7 @@
       <p><strong>1. Conectate al VPS por SSH y crear el container Caddy</strong> (elegí UNO de los dos modos):</p>
 
       <p style="margin-top:14px"><strong>Opción A — Caddy con docker run (rápido):</strong></p>
-      <pre class="mk" style="margin:6px 0">mkdir -p /opt/kumavpn/caddy /opt/kumavpn/caddy-data /opt/kumavpn/caddy-config
+      <pre class="mk" style="margin:6px 0">mkdir -p /opt/kumavpn/caddy /opt/kumavpn/caddy-data /opt/kumavpn/caddy-config /opt/kumavpn/letsencrypt
 
 docker run -d \
   --name caddy-monitormaat \
@@ -266,6 +323,7 @@ docker run -d \
   -v /opt/kumavpn/caddy/Caddyfile:/etc/caddy/Caddyfile \
   -v /opt/kumavpn/caddy-data:/data \
   -v /opt/kumavpn/caddy-config:/config \
+  -v /opt/kumavpn/letsencrypt:/certs:ro \
   caddy:2-alpine</pre>
 
       <p style="margin-top:14px"><strong>Opción B — Agregar al docker-compose existente:</strong></p>
@@ -281,6 +339,39 @@ docker run -d \
   </details>
 </section>
 {% endif %}
+
+{# === SSL por API — cómo funciona / modo manual === #}
+<section class="card">
+  <details class="mk-details">
+    <summary>📖 SSL por API (modo 3) — cómo funciona por dentro / hacerlo a mano</summary>
+    <div style="padding:8px 0">
+      <p class="muted">
+        El panel automatiza esto con la imagen oficial <code>certbot/dns-cloudflare</code>
+        (no tenés que hacerlo a mano). Por si querés replicarlo en otro servidor:
+      </p>
+      <p><strong>1. Instalar Certbot + plugin (Ubuntu/Debian):</strong></p>
+      <pre class="mk" style="margin:6px 0">sudo apt update
+sudo apt install certbot python3-certbot-dns-cloudflare</pre>
+      <p><strong>2. Token scoped en Cloudflare</strong> (plantilla <em>Edit zone DNS</em>, tu zona en Zone Resources).</p>
+      <p><strong>3. Guardar credenciales:</strong></p>
+      <pre class="mk" style="margin:6px 0">sudo mkdir -p /etc/letsencrypt
+echo 'dns_cloudflare_api_token = TU_TOKEN' | sudo tee /etc/letsencrypt/cloudflare.ini
+sudo chmod 600 /etc/letsencrypt/cloudflare.ini</pre>
+      <p><strong>4. Emitir el wildcard</strong> (Certbot crea el TXT de validación, obtiene el cert y borra el TXT solo):</p>
+      <pre class="mk" style="margin:6px 0">sudo certbot certonly \
+  --dns-cloudflare \
+  --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini \
+  -d 'midominio.com' \
+  -d '*.midominio.com'</pre>
+      <p class="muted small">
+        Certs en <code>/etc/letsencrypt/live/midominio.com/fullchain.pem</code> y
+        <code>privkey.pem</code>. En este panel quedan bajo
+        <code>/opt/kumavpn/letsencrypt/</code> y Caddy los usa vía <code>tls</code>;
+        la renovación corre sola cada ~60 días (DNS puede quedar en nube naranja).
+      </p>
+    </div>
+  </details>
+</section>
 
 {# === Caddyfile preview (colapsado — detalle técnico) === #}
 {% if caddyfile_preview %}

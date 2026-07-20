@@ -100,16 +100,9 @@ def _find_a_records(zone_id: str, fqdn: str, token: str) -> list:
     return _req("GET", f"/zones/{zone_id}/dns_records?type=A&name={q}", token).get("result") or []
 
 
-def create_record(fqdn: str, ip: str) -> dict:
+def _upsert_record(fqdn: str, ip: str, token: str, proxied: bool) -> dict:
     """Crea (o actualiza si ya existe) un registro A fqdn→ip. Idempotente.
-    Devuelve {'skipped': ...} si la integración está deshabilitada o sin token."""
-    cfg = settings_service.get_cloudflare_config()
-    if not cfg["enabled"] or not cfg["token"]:
-        return {"skipped": "Cloudflare deshabilitado o sin token"}
-    if not fqdn or not ip:
-        return {"skipped": "falta fqdn o ip"}
-    token = cfg["token"]
-    proxied = cfg["proxied"]
+    Sin guardas de modo — los callers deciden cuándo corresponde."""
     zone_id, _zone = _zone_id_for(fqdn, token)
     payload = {"type": "A", "name": fqdn, "content": ip, "proxied": proxied, "ttl": 1}
     existing = _find_a_records(zone_id, fqdn, token)
@@ -121,11 +114,22 @@ def create_record(fqdn: str, ip: str) -> dict:
     return {"created": fqdn, "ip": ip, "proxied": proxied}
 
 
-def delete_record(fqdn: str) -> dict:
-    """Borra todos los registros A de fqdn. Idempotente."""
+def create_record(fqdn: str, ip: str) -> dict:
+    """Registro A por-tenant. Solo actúa en modo cf_auto (en certbot el wildcard
+    ya cubre todos los subdominios; en caddy el DNS es manual)."""
     cfg = settings_service.get_cloudflare_config()
     if not cfg["enabled"] or not cfg["token"]:
-        return {"skipped": "Cloudflare deshabilitado o sin token"}
+        return {"skipped": "auto-DNS por-tenant deshabilitado o sin token"}
+    if not fqdn or not ip:
+        return {"skipped": "falta fqdn o ip"}
+    return _upsert_record(fqdn, ip, cfg["token"], cfg["proxied"])
+
+
+def delete_record(fqdn: str) -> dict:
+    """Borra todos los registros A de fqdn (baja de tenant, modo cf_auto). Idempotente."""
+    cfg = settings_service.get_cloudflare_config()
+    if not cfg["enabled"] or not cfg["token"]:
+        return {"skipped": "auto-DNS por-tenant deshabilitado o sin token"}
     if not fqdn:
         return {"skipped": "falta fqdn"}
     token = cfg["token"]
@@ -136,21 +140,28 @@ def delete_record(fqdn: str) -> dict:
     return {"deleted": fqdn, "count": len(recs)}
 
 
-def sync_all(panel_domain: str, tenants_domain: str, ip: str, tenant_names: list) -> dict:
-    """Asegura el registro del panel + de cada tenant existente. Best-effort:
-    acumula errores por host y sigue. Devuelve {'ok': [...], 'errors': [...]}."""
+def sync_all(tenants_domain: str, ip: str, tenant_names: list) -> dict:
+    """Asegura los registros DNS de los TENANTS según el modo configurado:
+    - cf_auto  → un registro A por tenant (`<nombre>.<dominio>`)
+    - certbot  → un único registro A wildcard (`*.<dominio>`)
+    - caddy    → no toca nada (DNS manual)
+    El dominio del PANEL no se gestiona acá — va siempre por Caddy con su
+    registro A manual (separación pedida a propósito).
+    Best-effort: acumula errores por host y sigue."""
+    mode = settings_service.get_tenants_ssl_mode()
     cfg = settings_service.get_cloudflare_config()
-    if not cfg["enabled"] or not cfg["token"]:
-        return {"skipped": "Cloudflare deshabilitado o sin token"}
+    if mode not in ("cf_auto", "certbot") or not cfg["token"]:
+        return {"skipped": "auto-DNS deshabilitado o sin token"}
+    if not tenants_domain or not ip:
+        return {"skipped": "falta tenants_domain o ip"}
+    if mode == "certbot":
+        targets = [f"*.{tenants_domain}"]
+    else:
+        targets = [f"{n}.{tenants_domain}" for n in tenant_names]
     ok, errors = [], []
-    targets = []
-    if panel_domain:
-        targets.append(panel_domain)
-    if tenants_domain:
-        targets += [f"{n}.{tenants_domain}" for n in tenant_names]
     for fqdn in targets:
         try:
-            create_record(fqdn, ip)
+            _upsert_record(fqdn, ip, cfg["token"], cfg["proxied"])
             ok.append(fqdn)
         except CloudflareError as e:
             errors.append(f"{fqdn}: {e}")

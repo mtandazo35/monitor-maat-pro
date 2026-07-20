@@ -38,6 +38,7 @@ import user_service as usr
 import billing_service as billing
 import payphone_service as payphone
 import caddy_service as caddy
+import certbot_service as certbot
 import cloudflare_service as cloudflare
 import email_service as mail
 import settings_service as settings
@@ -114,6 +115,7 @@ def _startup():
     favicon_gen.ensure_favicons(config.TEMPLATES_DIR.parent / "static")
     threading.Thread(target=_prewarm_images, daemon=True).start()
     threading.Thread(target=_payment_reminder_loop, daemon=True).start()
+    certbot.start_renewal_thread()
 
 
 def _flash(request: Request, msg: str, level: str = "info"):
@@ -1384,24 +1386,35 @@ def plans_settings(request: Request, user: dict = Depends(current_admin)):
 
 
 def _apply_network_stack() -> tuple[bool, str]:
-    """Pipeline único post-guardado: aplica Caddy y sincroniza DNS en Cloudflare
-    (si el auto-DNS está activo). Lo usan los dos forms de /settings/network y el
-    botón de reaplicar, para que dé igual desde cuál se guarde."""
+    """Pipeline único post-guardado, según el modo SSL de los tenants:
+    1. DNS por API si aplica (cf_auto → un A por tenant; certbot → wildcard único)
+    2. Cert wildcard vía certbot (solo modo certbot; bloquea ~30-90s la 1.ª vez)
+    3. Caddy apply (al final, para que el Caddyfile ya vea el cert emitido)
+    El panel NO pasa por DNS API ni certbot: siempre Caddy + registro A manual."""
     msgs = []
-    ok, msg = caddy.apply()
-    msgs.append(msg)
+    ok = True
     nc = settings.get_network_config()
+    mode = nc.get("tenants_ssl_mode", "caddy")
+
     res = cloudflare.sync_all(
-        nc.get("panel_domain", ""), nc.get("tenants_domain", ""),
-        config.PUBLIC_IP or "", [t["name"] for t in svc.list_tenants()],
+        nc.get("tenants_domain", ""), config.PUBLIC_IP or "",
+        [t["name"] for t in svc.list_tenants()],
     )
     if isinstance(res, dict):
         if res.get("errors"):
             ok = False
             msgs.append("DNS Cloudflare con errores: " + "; ".join(res["errors"][:3]))
         elif res.get("ok"):
-            msgs.append(f"{len(res['ok'])} registro(s) DNS sincronizado(s) en Cloudflare.")
-    return ok, " · ".join(msgs)
+            msgs.append(f"DNS OK: {', '.join(res['ok'][:4])}")
+
+    if mode == "certbot" and nc.get("tenants_domain"):
+        c_ok, c_msg = certbot.issue()
+        msgs.append(c_msg)
+        ok = ok and c_ok
+
+    a_ok, a_msg = caddy.apply()
+    msgs.append(a_msg)
+    return ok and a_ok, " · ".join(msgs)
 
 
 @app.get("/settings/network", response_class=HTMLResponse)
@@ -1412,6 +1425,7 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
             "request": request, "user": user,
             "cfg": settings.get_network_config(),
             "cf": {k: v for k, v in settings.get_cloudflare_config().items() if k != "token"},
+            "certbot_status": certbot.status(),
             "tenants": svc.list_tenants(),
             "public_ip": config.PUBLIC_IP or "",
             "caddy_running": caddy.caddy_container_running(),
@@ -1422,45 +1436,45 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
 
 
 @app.post("/settings/network")
-def network_settings_save(
+def panel_settings_save(
     request: Request,
     panel_domain: str = Form(""),
-    tenants_domain: str = Form(""),
     caddy_email: str = Form(""),
     use_https: str = Form(""),
     user: dict = Depends(current_admin),
 ):
+    """Form del PANEL admin: dominio + email LE + https. Siempre Caddy (HTTP-01)."""
     try:
-        settings.save_network_config(
+        settings.save_panel_config(
             panel_domain=panel_domain,
-            tenants_domain=tenants_domain,
             caddy_email=caddy_email,
             use_https=bool(use_https),
         )
-        events.log("network_settings_saved", "settings", actor=user,
-                   details=f"panel={panel_domain} tenants={tenants_domain}",
-                   ip=_client_ip(request))
-        # Pipeline único: Caddy + sync DNS Cloudflare (si está activo)
+        events.log("panel_domain_saved", "settings", actor=user,
+                   details=f"panel={panel_domain}", ip=_client_ip(request))
         ok, msg = _apply_network_stack()
         if ok:
-            _flash(request, f"Configuración guardada. {msg}", "success")
+            _flash(request, f"Panel guardado. {msg}", "success")
         else:
-            _flash(request, f"Configuración guardada con avisos: {msg}", "info")
+            _flash(request, f"Panel guardado con avisos: {msg}", "info")
     except ValueError as e:
         _flash(request, str(e), "error")
     return RedirectResponse("/settings/network", status_code=303)
 
 
-@app.post("/settings/cloudflare")
-def cloudflare_settings_save(
+@app.post("/settings/network/tenants")
+def tenants_settings_save(
     request: Request,
+    tenants_domain: str = Form(""),
+    ssl_mode: str = Form("caddy"),
     cf_api_token: str = Form(""),
-    cf_dns_enabled: str = Form(""),
     cf_proxied: str = Form(""),
     cf_clear: str = Form(""),
     user: dict = Depends(current_admin),
 ):
-    enabled = bool(cf_dns_enabled)
+    """Form de dominios de TENANTS (clientes: Kuma + accesos): dominio raíz +
+    modo SSL (caddy | cf_auto | certbot) + token de Cloudflare para los modos
+    que lo usan. Separado a propósito del form del panel."""
     proxied = bool(cf_proxied)
     clear = bool(cf_clear)
     # Si mandó un token nuevo, validarlo contra Cloudflare antes de guardarlo
@@ -1469,17 +1483,24 @@ def cloudflare_settings_save(
         if not v["ok"]:
             _flash(request, f"Token de Cloudflare inválido: {v['msg']}", "error")
             return RedirectResponse("/settings/network", status_code=303)
-    settings.save_cloudflare_config(
-        token=cf_api_token or None, enabled=enabled, proxied=proxied, clear_token=clear,
+    try:
+        settings.save_tenants_config(tenants_domain=tenants_domain, ssl_mode=ssl_mode)
+    except ValueError as e:
+        _flash(request, str(e), "error")
+        return RedirectResponse("/settings/network", status_code=303)
+    settings.save_cloudflare_token(
+        token=cf_api_token or None, proxied=proxied, clear_token=clear,
     )
-    events.log("cloudflare_settings_saved", "settings", actor=user,
-               details=f"enabled={enabled} proxied={proxied} clear={clear}", ip=_client_ip(request))
-    # Mismo pipeline que el form de dominios: Caddy + sync DNS (best-effort).
-    if enabled and not clear:
-        ok, msg = _apply_network_stack()
-        _flash(request, f"Cloudflare guardado. {msg}", "success" if ok else "info")
-    else:
-        _flash(request, "Configuración de Cloudflare guardada.", "success")
+    events.log("tenants_domain_saved", "settings", actor=user,
+               details=f"tenants={tenants_domain} ssl_mode={ssl_mode} clear_token={clear}",
+               ip=_client_ip(request))
+    cf_cfg = settings.get_cloudflare_config()
+    if ssl_mode in ("cf_auto", "certbot") and not cf_cfg["has_token"]:
+        _flash(request, "Guardado, pero el modo elegido necesita el token de API de "
+                        "Cloudflare — pegalo y volvé a guardar.", "info")
+        return RedirectResponse("/settings/network", status_code=303)
+    ok, msg = _apply_network_stack()
+    _flash(request, f"Dominio de tenants guardado. {msg}", "success" if ok else "info")
     return RedirectResponse("/settings/network", status_code=303)
 
 
