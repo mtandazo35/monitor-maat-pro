@@ -85,7 +85,7 @@
     <div v-if="loading" class="tbl-wrap desktop-only">
       <table class="tbl">
         <thead>
-          <tr><th>Usuario</th><th>Clave</th><th>IP VPN</th><th>Redes cliente</th><th>Mikrotik</th><th></th></tr>
+          <tr><th>Usuario</th><th>Clave</th><th>IP VPN</th><th>Redes cliente</th><th>Conectar</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="n in 2" :key="n">
@@ -101,7 +101,7 @@
           <thead>
             <tr>
               <th>Usuario</th><th>Clave</th><th>IP VPN</th>
-              <th>Redes cliente</th><th>Mikrotik</th><th></th>
+              <th>Redes cliente</th><th>Conectar</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -110,20 +110,26 @@
               <td><code v-text="u.password"></code></td>
               <td><code v-text="u.ip"></code></td>
               <td>
-                <ul v-if="u.networks && u.networks.length" class="nets">
-                  <li v-for="n in u.networks" :key="n.id">
-                    <code v-text="n.cidr"></code>
-                    <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/' + n.id + '/delete'"
-                          method="post" class="inline"
-                          @submit="confirmNet($event, n.cidr)">
-                      <button type="submit" class="btn-x" title="Eliminar red">×</button>
-                    </form>
-                  </li>
-                </ul>
-                <span v-else class="muted">—</span>
-                <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'" method="post" class="inline-form">
+                <div class="nets-row">
+                  <ul v-if="u.networks && u.networks.length" class="nets">
+                    <li v-for="n in u.networks" :key="n.id">
+                      <code v-text="n.cidr"></code>
+                      <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/' + n.id + '/delete'"
+                            method="post" class="inline"
+                            @submit="confirmNet($event, n.cidr)">
+                        <button type="submit" class="btn-x" title="Eliminar red">×</button>
+                      </form>
+                    </li>
+                  </ul>
+                  <span v-else class="muted">—</span>
+                  <button type="button" class="btn small" @click="toggleNetForm(u.id)"
+                          v-text="netFormOpen[u.id] ? '× Cancelar' : '+ Red'"></button>
+                </div>
+                <form v-if="netFormOpen[u.id]"
+                      :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'"
+                      method="post" class="inline-form">
                   <input name="cidr" placeholder="192.168.1.0/24" required>
-                  <button class="btn small">+ Red</button>
+                  <button class="btn small">Agregar</button>
                 </form>
               </td>
               <td class="mk-cell">
@@ -131,6 +137,11 @@
                   <summary v-text="key === 'v6' ? 'RouterOS v6' : 'RouterOS v7+'"></summary>
                   <pre class="mk" v-text="snippet"></pre>
                   <button type="button" class="btn small" @click="copy($event, snippet)">Copiar</button>
+                </details>
+                <details v-if="u.debian" class="mk-ver">
+                  <summary>Debian / Ubuntu</summary>
+                  <pre class="mk" v-text="u.debian"></pre>
+                  <button type="button" class="btn small" @click="copy($event, u.debian)">Copiar</button>
                 </details>
               </td>
               <td>
@@ -158,28 +169,39 @@
             <dt>IP VPN</dt><dd><code v-text="u.ip"></code></dd>
             <dt>Redes</dt>
             <dd>
-              <ul v-if="u.networks && u.networks.length" class="nets">
-                <li v-for="n in u.networks" :key="n.id">
-                  <code v-text="n.cidr"></code>
-                  <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/' + n.id + '/delete'"
-                        method="post" class="inline" @submit="confirmNet($event, n.cidr)">
-                    <button type="submit" class="btn-x" title="Eliminar red">×</button>
-                  </form>
-                </li>
-              </ul>
-              <span v-else class="muted">—</span>
+              <div class="nets-row">
+                <ul v-if="u.networks && u.networks.length" class="nets">
+                  <li v-for="n in u.networks" :key="n.id">
+                    <code v-text="n.cidr"></code>
+                    <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/' + n.id + '/delete'"
+                          method="post" class="inline" @submit="confirmNet($event, n.cidr)">
+                      <button type="submit" class="btn-x" title="Eliminar red">×</button>
+                    </form>
+                  </li>
+                </ul>
+                <span v-else class="muted">—</span>
+                <button type="button" class="btn small" @click="toggleNetForm(u.id)"
+                        v-text="netFormOpen[u.id] ? '× Cancelar' : '+ Red'"></button>
+              </div>
             </dd>
           </dl>
-          <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'" method="post" class="inline-form">
+          <form v-if="netFormOpen[u.id]"
+                :action="'/tenants/' + tenantName + '/users/' + u.id + '/networks/new'"
+                method="post" class="inline-form">
             <input name="cidr" placeholder="192.168.1.0/24" required>
-            <button class="btn small">+ Red</button>
+            <button class="btn small">Agregar</button>
           </form>
           <details class="mk-details">
-            <summary>Snippet Mikrotik</summary>
+            <summary>Snippets de conexión</summary>
             <div v-for="(snippet, key) in u.mikrotik" :key="key" class="mk-ver">
               <div class="mk-ver-label" v-text="key === 'v6' ? 'RouterOS v6' : 'RouterOS v7+'"></div>
               <pre class="mk" v-text="snippet"></pre>
               <button type="button" class="btn small" @click="copy($event, snippet)">Copiar</button>
+            </div>
+            <div v-if="u.debian" class="mk-ver">
+              <div class="mk-ver-label">Debian / Ubuntu</div>
+              <pre class="mk" v-text="u.debian"></pre>
+              <button type="button" class="btn small" @click="copy($event, u.debian)">Copiar</button>
             </div>
           </details>
         </article>
@@ -217,6 +239,11 @@ window.addEventListener('DOMContentLoaded', () => {
       const error = ref(false);
       const tenant = ref(null);
       const users = ref([]);
+      const netFormOpen = ref({});
+
+      function toggleNetForm(id) {
+        netFormOpen.value = { ...netFormOpen.value, [id]: !netFormOpen.value[id] };
+      }
 
       let timer = null;
       let inflight = null;
@@ -278,7 +305,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (inflight) inflight.abort();
       });
 
-      return { loading, error, role, tenantName, tenant, users, confirmUser, confirmNet, confirmDelete, copy };
+      return { loading, error, role, tenantName, tenant, users, netFormOpen, toggleNetForm, confirmUser, confirmNet, confirmDelete, copy };
     },
     delimiters: ['[[', ']]'],
   }).mount('#tenant-app');
@@ -287,6 +314,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
 <style>
   [v-cloak] { visibility: hidden; }
+  .nets-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .nets-row .nets { margin: 0; }
   .sk-inline {
     display: inline-block;
     min-height: 1em;

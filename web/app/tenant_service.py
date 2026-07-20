@@ -595,6 +595,59 @@ def delete_network(tenant: dict, user_id: int, network_id: int) -> None:
     _docker_exec(container, ["sh", "-c", "kill -HUP 1"])
 
 
+def _tenant_ca(tenant: dict) -> str:
+    """CA del tenant, leída directo del bind-mount del contenedor OpenVPN
+    ({BASE_PATH}/tenants/<name>/openvpn/server/ca.crt). Vacío si aún no existe."""
+    ca_path = config.TENANTS_DIR / tenant["name"] / "openvpn" / "server" / "ca.crt"
+    try:
+        return ca_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def debian_snippet(tenant: dict, user: dict) -> str:
+    """Instalador copy-paste para un equipo Debian/Ubuntu: instala OpenVPN,
+    escribe config + credenciales (600), deja el servicio con auto-restart y
+    habilitado al arranque (systemd). Un solo paste como root y queda conectado."""
+    ca = _tenant_ca(tenant)
+    if not ca:
+        return ("# La CA del tenant aún no está disponible — esperá a que el "
+                "contenedor OpenVPN termine de arrancar y recargá la página.")
+    name = f"vpn-{tenant['name']}"
+    return f"""# ===== Conectar este equipo Debian/Ubuntu a la VPN — pegar TODO como root =====
+apt-get update && apt-get install -y openvpn
+mkdir -p /etc/openvpn/client
+cat > /etc/openvpn/client/{name}.conf <<'MAATEOF'
+client
+dev tun
+proto tcp
+remote {tenant['public_ip']} {tenant['vpn_port']}
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+auth SHA1
+data-ciphers AES-256-CBC
+data-ciphers-fallback AES-256-CBC
+auth-user-pass /etc/openvpn/client/{name}.auth
+verb 3
+<ca>
+{ca}
+</ca>
+MAATEOF
+cat > /etc/openvpn/client/{name}.auth <<'MAATEOF'
+{user['username']}
+{user['password']}
+MAATEOF
+chmod 600 /etc/openvpn/client/{name}.conf /etc/openvpn/client/{name}.auth
+mkdir -p /etc/systemd/system/openvpn-client@{name}.service.d
+printf '[Service]\\nRestart=always\\nRestartSec=10\\n' > /etc/systemd/system/openvpn-client@{name}.service.d/restart.conf
+systemctl daemon-reload
+systemctl enable --now openvpn-client@{name}
+sleep 3 && systemctl --no-pager status openvpn-client@{name} | head -3 && ip -4 addr show tun0 | grep inet
+# ===== Listo: arranca solo al boot y se reconecta solo si se cae ====="""
+
+
 def mikrotik_snippet(tenant: dict, user: dict) -> dict:
     ip = tenant["public_ip"]
     port = tenant["vpn_port"]

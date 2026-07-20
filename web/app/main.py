@@ -529,6 +529,7 @@ def api_tenant_detail(name: str, user: dict = Depends(current_user)):
     for u in users_list:
         u["networks"] = svc.list_networks(u["id"])
         u["mikrotik"] = svc.mikrotik_snippet(tenant, u)
+        u["debian"] = svc.debian_snippet(tenant, u)
     tenant["ovpn_status"] = svc.container_status(f"openvpn-{tenant['name']}")
     tenant["kuma_status"] = svc.container_status(f"kuma-{tenant['name']}")
     tenant["kuma_url"] = svc.kuma_url(tenant)
