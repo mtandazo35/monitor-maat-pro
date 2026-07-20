@@ -88,15 +88,33 @@
     Cloudflare</strong> de crear el subdominio apuntando a este VPS, y Caddy emite el
     certificado solo. Al borrar la empresa, elimina el registro. No tocás DNS a mano.
   </p>
+  {% if cfg.tenants_domain or cfg.panel_domain %}
+  <div class="https-toggle" style="margin-top:0">
+    <span class="https-toggle-text">
+      <strong>Dominios que va a gestionar</strong>
+      <small class="muted">
+        {% if cfg.tenants_domain %}
+        Tenants: <code>&lt;nombre&gt;.{{ cfg.tenants_domain }}</code>
+        (equivale al wildcard <code>*.{{ cfg.tenants_domain }}</code>)
+        → <code>{{ public_ip or 'IP_DEL_VPS' }}</code><br>
+        {% endif %}
+        {% if cfg.panel_domain %}
+        Panel: <code>{{ cfg.panel_domain }}</code> → <code>{{ public_ip or 'IP_DEL_VPS' }}</code><br>
+        {% endif %}
+        La <strong>zona</strong> de Cloudflare se detecta sola en la cuenta del token;
+        los registros se crean en <strong>nube gris</strong> salvo que actives Proxied.
+      </small>
+    </span>
+  </div>
+  {% else %}
   <p class="muted small">
-    ℹ No hay nada más que elegir acá: el <strong>dominio</strong> lo toma de
-    "Configurá tus dominios" (cada tenant queda en
-    <code>&lt;nombre&gt;.{{ cfg.tenants_domain or 'tenants_domain' }}</code>), la
-    <strong>zona</strong> de Cloudflare se detecta sola en la cuenta del token, y la
-    <strong>IP</strong> es la de este VPS (<code>{{ public_ip or 'IP_DEL_VPS' }}</code>).
-    {% if not cfg.tenants_domain %}<strong>⚠ Primero guardá el dominio de tenants arriba
-    — sin eso el auto-DNS no tiene qué crear.</strong>{% endif %}
+    <strong>⚠ Primero guardá los dominios en "Configurá tus dominios" (arriba)</strong> —
+    de ahí toma este auto-DNS qué registros crear (cada tenant queda en
+    <code>&lt;nombre&gt;.&lt;dominio-de-tenants&gt;</code>, apuntando a la IP de este
+    VPS <code>{{ public_ip or 'IP_DEL_VPS' }}</code>). La zona de Cloudflare se detecta
+    sola en la cuenta del token.
   </p>
+  {% endif %}
 
   <form method="post" action="/settings/cloudflare">
     <div class="https-toggle">
