@@ -1,8 +1,8 @@
 # MonitorMaat
 
-Plataforma multi-tenant para correr **OpenVPN + Uptime Kuma** aislados por cliente en un solo servidor Debian/Ubuntu.
+Plataforma multi-tenant para correr **OpenVPN + WireGuard + Uptime Kuma** aislados por cliente en un solo servidor Debian/Ubuntu.
 
-Cada tenant tiene su propio puerto OpenVPN, rango VPN, instancia de Uptime Kuma y URL separada. El panel web (FastAPI) lo gestiona todo: usuarios, roles, quotas, notificaciones por Telegram y Email, logs.
+Cada tenant tiene sus propios puertos OpenVPN y WireGuard, rangos VPN, instancia de Uptime Kuma y URL separada. El protocolo se elige **por usuario VPN**: un mismo tenant puede tener MikroTiks v6 en OpenVPN y equipos v7/Linux en WireGuard, todos en el mismo hub. El panel web (FastAPI) lo gestiona todo: usuarios, roles, quotas, notificaciones por Telegram y Email, logs.
 
 ---
 
@@ -111,21 +111,31 @@ Usuarios → **+ Nuevo usuario**:
 Tenants → **+ Nuevo tenant** → asigna automáticamente:
 - Slot (1..254)
 - Puerto OpenVPN (`1193 + slot`)
+- Puerto WireGuard (`51820 + slot`, UDP)
 - Puerto Kuma (`3000 + slot`)
-- Subred VPN (`100.64.<slot>.0/24`)
+- Subred VPN OpenVPN (`100.64.<slot>.0/24`) y WireGuard (`100.65.<slot>.0/24`)
 
 Levanta openvpn + kuma en ~5s (primer tenant más lento por pull de Kuma).
 
 ### 3. Crear usuario VPN para un Mikrotik
 
-Tenant → **+ Nuevo usuario VPN** → genera username/password aleatorios + asigna IP VPN. Mostrá el snippet listo para pegar en el Mikrotik (RouterOS v6 y v7+).
+Tenant → **+ OpenVPN** o **+ WireGuard**, según el equipo del cliente. Los dos protocolos conviven en el mismo tenant (mismo contenedor y netns), así Uptime Kuma alcanza por igual a todos.
+
+- **OpenVPN**: genera username/password aleatorios + IP VPN. Snippets para RouterOS v6 y v7+ y para Debian/Ubuntu.
+- **WireGuard**: genera par de claves + preshared key + IP. Snippets: `.conf` de `wg-quick` (Linux/Windows/móvil), instalador Debian/Ubuntu y RouterOS **v7** — *RouterOS v6 no soporta WireGuard, esos equipos van por OpenVPN*.
 
 ### 4. Agregar redes detrás del Mikrotik
 
 Tenant → usuario VPN → form `+ Red` → CIDR de la LAN del cliente (ej. `192.168.88.0/24`). Se agrega:
+
+En OpenVPN:
 - `iroute` al CCD del usuario
 - `ip route replace` al `rutas.sh`
 - SIGHUP a openvpn → la ruta queda activa **sin afectar Kuma** (no recrea el contenedor)
+
+En WireGuard:
+- el CIDR entra en los `AllowedIPs` del peer en `wg0.conf`
+- `wg syncconf` + `ip route replace ... dev wg0` → activo en caliente, sin cortar a los demás peers
 
 > ⚠ El Mikrotik del cliente debe tener una regla NAT (masquerade) sobre la interfaz LAN para que los devices de la LAN respondan al openvpn server. Ver troubleshooting al final.
 

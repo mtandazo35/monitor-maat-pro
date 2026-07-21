@@ -40,6 +40,8 @@ def init_db() -> None:
                 docker_subnet TEXT NOT NULL,
                 public_ip TEXT,
                 owner_id INTEGER REFERENCES users(id),
+                wg_port INTEGER,
+                wg_subnet TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -49,6 +51,10 @@ def init_db() -> None:
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
                 ip TEXT NOT NULL,
+                proto TEXT NOT NULL DEFAULT 'openvpn',
+                wg_priv TEXT,
+                wg_pub TEXT,
+                wg_psk TEXT,
                 created_at TEXT NOT NULL,
                 UNIQUE(tenant_id, username)
             );
@@ -129,6 +135,37 @@ def init_db() -> None:
         cols = [r[1] for r in con.execute("PRAGMA table_info(tenants)").fetchall()]
         if "owner_id" not in cols:
             con.execute("ALTER TABLE tenants ADD COLUMN owner_id INTEGER REFERENCES users(id)")
+
+        # Migración WireGuard: puerto UDP + subred propia por tenant.
+        # Backfill desde el slot con la misma fórmula que usa create_tenant, así los
+        # tenants creados antes del feature quedan con valores válidos y estables.
+        if "wg_port" not in cols:
+            con.execute("ALTER TABLE tenants ADD COLUMN wg_port INTEGER")
+        if "wg_subnet" not in cols:
+            con.execute("ALTER TABLE tenants ADD COLUMN wg_subnet TEXT")
+        try:
+            import config as _cfg
+            con.execute(
+                "UPDATE tenants SET wg_port = ? + slot WHERE wg_port IS NULL",
+                (_cfg.WG_PORT_BASE,),
+            )
+            con.execute(
+                "UPDATE tenants SET wg_subnet = ? || '.' || slot || '.0' WHERE wg_subnet IS NULL",
+                (_cfg.WG_SUBNET_PREFIX,),
+            )
+        except Exception:
+            pass
+
+        # Migración WireGuard: protocolo + claves por usuario VPN.
+        # proto default 'openvpn' → las filas existentes quedan correctas sin tocarlas.
+        vucols = [r[1] for r in con.execute("PRAGMA table_info(vpn_users)").fetchall()]
+        if "proto" not in vucols:
+            con.execute(
+                "ALTER TABLE vpn_users ADD COLUMN proto TEXT NOT NULL DEFAULT 'openvpn'"
+            )
+        for col in ("wg_priv", "wg_pub", "wg_psk"):
+            if col not in vucols:
+                con.execute(f"ALTER TABLE vpn_users ADD COLUMN {col} TEXT")
 
         # Migración: agregar email + must_change_password a users existentes
         ucols = [r[1] for r in con.execute("PRAGMA table_info(users)").fetchall()]

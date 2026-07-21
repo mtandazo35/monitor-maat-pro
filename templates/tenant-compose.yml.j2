@@ -16,8 +16,11 @@ services:
       MASCARA_VPN: "{{ tenant.vpn_mask }}"
       VPN_PORT: "{{ tenant.vpn_port }}"
       VPN_PROTO: "tcp"
+      WG_PORT: "{{ tenant.wg_port }}"
+      WG_SUBNET: "{{ tenant.wg_subnet }}"
     ports:
       - "{{ tenant.vpn_port }}:{{ tenant.vpn_port }}/tcp"
+      - "{{ tenant.wg_port }}:{{ tenant.wg_port }}/udp"
       - "{{ kuma_bind | default('0.0.0.0') }}:{{ tenant.kuma_port }}:3001"
     volumes:
       - {{ base_path }}/tenants/{{ tenant.name }}/openvpn:/etc/openvpn

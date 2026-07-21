@@ -59,7 +59,8 @@
 
 <section id="vpn-users" class="card">
   <h2 class="form-section">4. Usuarios VPN dentro de un tenant</h2>
-  <p>Un <strong>usuario VPN</strong> es una credencial que se conecta al OpenVPN del tenant. NO es un usuario del panel.</p>
+  <p>Un <strong>usuario VPN</strong> es una credencial que se conecta a la VPN del tenant. NO es un usuario del panel.</p>
+  <p>El <strong>protocolo se elige al crearlo</strong>, según el equipo del cliente: <strong>OpenVPN</strong> (usuario/contraseña, funciona en RouterOS v6 y v7) o <strong>WireGuard</strong> (par de claves, <em>solo RouterOS v7</em>, Linux, Windows y móviles). Ambos conviven en el mismo tenant y Uptime Kuma alcanza por igual a los dos.</p>
   <ul>
     <li><strong>Crear</strong>: nombre + descarga del <code>.ovpn</code> listo para importar en cualquier cliente OpenVPN.</li>
     <li><strong>Redes</strong>: a cada usuario VPN podés asociarle una o varias subredes (ej: <code>192.168.1.0/24</code>) que se ruteen por su túnel — útil para Mikrotik / sucursales.</li>

@@ -20,6 +20,7 @@
       <dt>IP pública</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
       <dt>Dominio</dt><dd><span class="sk-inline" style="min-width:14em"></span></dd>
       <dt>OpenVPN</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
+      <dt>WireGuard</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
       <dt>Kuma</dt><dd><span class="sk-inline" style="min-width:12em"></span></dd>
       <dt>Subred VPN</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
       <dt>Red Docker</dt><dd><span class="sk-inline" style="min-width:8em"></span></dd>
@@ -51,6 +52,11 @@
         <code v-text="tenant.public_ip + ':' + tenant.vpn_port + '/tcp'"></code>
         <span class="status" :class="'status-' + tenant.ovpn_status" v-text="tenant.ovpn_status"></span>
       </dd>
+      <dt>WireGuard</dt>
+      <dd>
+        <code v-text="tenant.public_ip + ':' + tenant.wg_port + '/udp'"></code>
+        <span class="muted small">· mismo contenedor que OpenVPN</span>
+      </dd>
       <dt>Kuma</dt>
       <dd>
         <a :href="tenant.kuma_url" target="_blank" rel="noopener"
@@ -77,10 +83,21 @@
   <section class="card">
     <div class="row between">
       <h2>Usuarios VPN</h2>
-      <form :action="'/tenants/' + tenantName + '/users/new'" method="post" class="inline">
-        <button class="btn primary">+ Nuevo usuario VPN</button>
-      </form>
+      <div class="row" style="gap:8px">
+        <form :action="'/tenants/' + tenantName + '/users/new'" method="post" class="inline">
+          <input type="hidden" name="proto" value="openvpn">
+          <button class="btn primary">+ OpenVPN</button>
+        </form>
+        <form :action="'/tenants/' + tenantName + '/users/new'" method="post" class="inline">
+          <input type="hidden" name="proto" value="wireguard">
+          <button class="btn primary">+ WireGuard</button>
+        </form>
+      </div>
     </div>
+    <p class="muted small" style="margin-top:0">
+      Los dos protocolos conviven en el mismo tenant: elegí según el equipo.
+      <strong>WireGuard necesita RouterOS v7</strong>; en v6 usá OpenVPN.
+    </p>
 
     <div v-if="loading" class="tbl-wrap desktop-only">
       <table class="tbl">
@@ -106,8 +123,15 @@
           </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id">
-              <td><code v-text="u.username"></code></td>
-              <td><code v-text="u.password"></code></td>
+              <td>
+                <code v-text="u.username"></code>
+                <span class="proto-tag" :class="'proto-' + (u.proto || 'openvpn')"
+                      v-text="(u.proto || 'openvpn') === 'wireguard' ? 'WG' : 'OVPN'"></span>
+              </td>
+              <td>
+                <code v-if="(u.proto || 'openvpn') !== 'wireguard'" v-text="u.password"></code>
+                <span v-else class="muted" title="WireGuard autentica por claves">— claves</span>
+              </td>
               <td><code v-text="u.ip"></code></td>
               <td>
                 <div class="nets-row">
@@ -136,6 +160,11 @@
                   <pre class="mk" v-text="u.debian"></pre>
                   <button type="button" class="btn small" @click="copy($event, u.debian)">Copiar</button>
                 </details>
+                <details v-if="u.wg_conf" class="mk-ver">
+                  <summary>WireGuard (.conf)</summary>
+                  <pre class="mk" v-text="u.wg_conf"></pre>
+                  <button type="button" class="btn small" @click="copy($event, u.wg_conf)">Copiar</button>
+                </details>
               </td>
               <td>
                 <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/delete'"
@@ -151,14 +180,22 @@
       <div class="mobile-only user-cards">
         <article v-for="u in users" :key="u.id" class="user-card">
           <div class="user-card-head">
-            <code class="user-name" v-text="u.username"></code>
+            <span>
+              <code class="user-name" v-text="u.username"></code>
+              <span class="proto-tag" :class="'proto-' + (u.proto || 'openvpn')"
+                    v-text="(u.proto || 'openvpn') === 'wireguard' ? 'WG' : 'OVPN'"></span>
+            </span>
             <form :action="'/tenants/' + tenantName + '/users/' + u.id + '/delete'"
                   method="post" class="inline" @submit="confirmUser($event, u.username)">
               <button class="btn small warn">Borrar</button>
             </form>
           </div>
           <dl class="user-card-grid">
-            <dt>Clave</dt><dd><code v-text="u.password"></code></dd>
+            <dt>Clave</dt>
+            <dd>
+              <code v-if="(u.proto || 'openvpn') !== 'wireguard'" v-text="u.password"></code>
+              <span v-else class="muted">— claves</span>
+            </dd>
             <dt>IP VPN</dt><dd><code v-text="u.ip"></code></dd>
             <dt>Redes</dt>
             <dd>
@@ -188,6 +225,11 @@
               <div class="mk-ver-label">Debian / Ubuntu</div>
               <pre class="mk" v-text="u.debian"></pre>
               <button type="button" class="btn small" @click="copy($event, u.debian)">Copiar</button>
+            </div>
+            <div v-if="u.wg_conf" class="mk-ver">
+              <div class="mk-ver-label">WireGuard (.conf)</div>
+              <pre class="mk" v-text="u.wg_conf"></pre>
+              <button type="button" class="btn small" @click="copy($event, u.wg_conf)">Copiar</button>
             </div>
           </details>
         </article>
@@ -333,6 +375,22 @@ window.addEventListener('DOMContentLoaded', () => {
   [v-cloak] { visibility: hidden; }
   .nets-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .nets-row .nets { margin: 0; }
+
+  /* Etiqueta de protocolo del usuario VPN */
+  .proto-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    border: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: middle;
+  }
+  .proto-openvpn { background: rgba(56, 139, 253, .16); border-color: rgba(56, 139, 253, .45); }
+  .proto-wireguard { background: rgba(45, 190, 150, .16); border-color: rgba(45, 190, 150, .45); }
 
   /* ===== MODAL AGREGAR RED (mismo look que el modal de pagos) ===== */
   .net-modal-backdrop {

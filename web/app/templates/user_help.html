@@ -51,7 +51,8 @@
 
 <section id="vpn-users" class="card">
   <h2 class="form-section">3. Crear usuarios VPN dentro de un tenant</h2>
-  <p>Un <strong>usuario VPN</strong> es la credencial que se conecta al OpenVPN del tenant — por ejemplo, un Mikrotik en una sucursal o tu laptop.</p>
+  <p>Un <strong>usuario VPN</strong> es la credencial que se conecta a la VPN del tenant — por ejemplo, un Mikrotik en una sucursal o tu laptop.</p>
+  <p>Al crearlo elegís el protocolo: <strong>OpenVPN</strong> (usuario y contraseña; sirve en RouterOS v6 y v7) o <strong>WireGuard</strong> (claves, más rápido; <em>necesita RouterOS v7</em>, o Linux/Windows/móvil). Podés mezclar los dos en el mismo tenant.</p>
   <ul>
     <li>Dentro del tenant, sección <strong>Usuarios VPN</strong>, click en <em>Crear usuario</em>.</li>
     <li>Se descarga un archivo <code>.ovpn</code> que contiene el certificado y la configuración. <strong>Guardalo bien</strong>: solo se puede descargar al momento de la creación.</li>

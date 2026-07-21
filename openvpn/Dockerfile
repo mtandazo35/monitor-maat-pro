@@ -15,6 +15,8 @@ RUN apt-get update && \
         adduser \
         procps \
         tini \
+        wireguard-tools \
+        wireguard-go \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pam-openvpn /etc/pam.d/openvpn
@@ -23,5 +25,6 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 1194/tcp
 EXPOSE 1194/udp
+EXPOSE 51820/udp
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]

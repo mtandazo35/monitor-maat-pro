@@ -26,6 +26,12 @@ KUMA_PORT_BASE = int(os.environ.get("KUMA_PORT_BASE", "3000"))
 VPN_SUBNET_PREFIX = os.environ.get("VPN_SUBNET_PREFIX", "100.64")
 DOCKER_SUBNET_PREFIX = os.environ.get("DOCKER_SUBNET_PREFIX", "172.30")
 
+# --- WireGuard (segundo protocolo, mismo contenedor/netns que OpenVPN) ---
+# Puerto UDP por tenant = WG_PORT_BASE + slot. Subred propia por tenant para no
+# solaparse con la de OpenVPN (VPN_SUBNET_PREFIX).
+WG_PORT_BASE = int(os.environ.get("WG_PORT_BASE", "51820"))
+WG_SUBNET_PREFIX = os.environ.get("WG_SUBNET_PREFIX", "100.65")
+
 MAX_TENANTS = 254
 
 # --- SMTP (opcional; si SMTP_HOST está vacío, los emails se loguean en flash) ---

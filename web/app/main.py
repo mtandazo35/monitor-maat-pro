@@ -530,6 +530,12 @@ def api_tenant_detail(name: str, user: dict = Depends(current_user)):
         u["networks"] = svc.list_networks(u["id"])
         u["mikrotik"] = svc.mikrotik_snippet(tenant, u)
         u["debian"] = svc.debian_snippet(tenant, u)
+        if u.get("proto") == "wireguard":
+            u["wg_conf"] = svc.wireguard_conf(tenant, u)
+        # La clave privada ya viaja dentro de los snippets (el cliente la necesita);
+        # no hace falta duplicarla suelta en el JSON.
+        u.pop("wg_priv", None)
+        u.pop("wg_psk", None)
     tenant["ovpn_status"] = svc.container_status(f"openvpn-{tenant['name']}")
     tenant["kuma_status"] = svc.container_status(f"kuma-{tenant['name']}")
     tenant["kuma_url"] = svc.kuma_url(tenant)
@@ -541,20 +547,28 @@ def api_tenant_detail(name: str, user: dict = Depends(current_user)):
 
 
 @app.post("/tenants/{name}/users/new")
-def add_user(request: Request, name: str, user: dict = Depends(current_user)):
+def add_user(
+    request: Request,
+    name: str,
+    proto: str = Form("openvpn"),
+    user: dict = Depends(current_user),
+):
     tenant = svc.get_tenant(name)
     if not tenant:
         raise HTTPException(404)
     _require_tenant_access(user, tenant)
     try:
-        created = svc.add_vpn_user(tenant)
+        created = svc.add_vpn_user(tenant, proto)
         events.log("vpn_user_created", "vpn_user", actor=user, tenant=tenant,
-                   details=f"username={created['username']} ip={created['ip']}", ip=_client_ip(request))
-        _flash(
-            request,
-            f"Usuario VPN creado: {created['username']} / {created['password']} (IP {created['ip']}).",
-            "success",
-        )
+                   details=f"username={created['username']} ip={created['ip']} proto={proto}",
+                   ip=_client_ip(request))
+        if created.get("proto") == "wireguard":
+            msg = (f"Peer WireGuard creado: {created['username']} (IP {created['ip']}). "
+                   "Copiá la config desde la columna Conectar.")
+        else:
+            msg = (f"Usuario VPN creado: {created['username']} / {created['password']} "
+                   f"(IP {created['ip']}).")
+        _flash(request, msg, "success")
     except svc.ServiceError as e:
         _flash(request, str(e), "error")
     except Exception as e:
