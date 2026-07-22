@@ -3,7 +3,7 @@
 # Pulla imágenes pre-builteadas desde GHCR — no necesita clonar el repo ni buildear.
 #
 # Uso (desde un Debian/Ubuntu limpio, como root):
-#   curl -fsSL https://raw.githubusercontent.com/mtandazo35/monitor-maat/main/get.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/mtandazo35/monitor-maat-pro/main/get.sh | sudo bash
 #
 # Variables opcionales:
 #   ADMIN_PASS=miclave  curl ... | sudo bash      # password admin específica (default: aleatoria)
@@ -15,7 +15,7 @@ set -e
 
 INSTALL_DIR="/opt/monitor-maat"
 DATA_DIR="/opt/kumavpn"
-RAW_BASE="https://raw.githubusercontent.com/mtandazo35/monitor-maat/main"
+RAW_BASE="https://raw.githubusercontent.com/mtandazo35/monitor-maat-pro/main"
 REGISTRY="ghcr.io/mtandazo35"
 TAG="${VERSION:-latest}"
 

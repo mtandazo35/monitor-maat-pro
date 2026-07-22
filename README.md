@@ -6,6 +6,20 @@ Cada tenant tiene sus propios puertos OpenVPN y WireGuard, rangos VPN, instancia
 
 ---
 
+## ⚡ Quick install (one-liner)
+
+En un Debian/Ubuntu limpio, como root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mtandazo35/monitor-maat-pro/main/get.sh | sudo bash
+```
+
+Instala Docker si falta, pullea las imágenes desde GHCR (no clona ni buildea), genera credenciales y levanta el panel. Al terminar imprime **URL + usuario + password** — esa password aleatoria no se vuelve a mostrar y el primer login obliga a cambiarla.
+
+Correr el mismo comando de nuevo es **idempotente**: actualiza las imágenes y preserva el `.env` y los tenants existentes.
+
+---
+
 ## Arquitectura
 
 ```
@@ -45,7 +59,7 @@ Cada tenant tiene sus propios puertos OpenVPN y WireGuard, rangos VPN, instancia
 Pulla imágenes pre-builteadas desde GitHub Container Registry. **No necesita clonar el repo**.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mtandazo35/monitor-maat/main/get.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/mtandazo35/monitor-maat-pro/main/get.sh | sudo bash
 ```
 
 Variables opcionales:
@@ -69,7 +83,7 @@ Al terminar te imprime URL + usuario + password. **El primer login obliga a camb
 ### Opción 2 — Clone + build local (para desarrollo)
 
 ```bash
-git clone https://github.com/mtandazo35/monitor-maat.git /opt/monitor-maat
+git clone https://github.com/mtandazo35/monitor-maat-pro.git /opt/monitor-maat
 cd /opt/monitor-maat
 sudo ./install.sh
 ```
