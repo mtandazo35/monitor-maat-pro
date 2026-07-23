@@ -222,6 +222,25 @@ iptables -C INPUT -i wg0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>
 iptables -C INPUT -i wg0 -p icmp -j ACCEPT 2>/dev/null || \
     iptables -I INPUT -i wg0 -p icmp -j ACCEPT
 
+# Aislamiento de EGRESS del contenedor. Uptime Kuma comparte este netns
+# (network_mode: service:openvpn), así que hereda el uplink (eth0) y su ruta por
+# defecto hacia el gateway de Docker → host → redes internas del host. Sin filtrar,
+# Kuma alcanza redes privadas del host (p.ej. 10.0.3.x) que NO debe ver.
+# Bloqueamos lo que el contenedor ORIGINA hacia rangos privados por el uplink:
+# - las redes de CLIENTE van por tun0/wg0 (no el uplink) → NO se ven afectadas;
+# - internet (destino público) tampoco se ve afectado;
+# - se permite el retorno de conexiones ya establecidas (respuestas a clientes VPN
+#   que entran por el uplink), para no romper el propio VPN.
+echo "[setup] Aislamiento de egress (OUTPUT del contenedor hacia redes privadas del host)..."
+UPLINK="$(ip route show default 2>/dev/null | awk '{print $5; exit}')"
+UPLINK="${UPLINK:-eth0}"
+iptables -C OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+    iptables -I OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+    iptables -C OUTPUT -o "$UPLINK" -d "$net" -j DROP 2>/dev/null || \
+        iptables -A OUTPUT -o "$UPLINK" -d "$net" -j DROP
+done
+
 echo "[run] Starting OpenVPN on ${VPN_PROTO}/${VPN_PORT} with tunnel ${IP_VPN}/${MASCARA_VPN}..."
 cd "$SERVER_DIR"
 exec openvpn --config server.conf --suppress-timestamps
