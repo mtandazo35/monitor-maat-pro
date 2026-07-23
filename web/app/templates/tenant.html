@@ -297,14 +297,24 @@
           Usuario <code v-text="netModal.username"></code> · IP VPN <code v-text="netModal.ip"></code>
         </p>
         <form :action="'/tenants/' + tenantName + '/users/' + netModal.id + '/networks/new'" method="post">
-          <label>Red del cliente (formato CIDR)
-            <input id="net-cidr-input" name="cidr" placeholder="192.168.1.0/24" required
-                   autocomplete="off">
-            <small class="muted">La LAN detrás del Mikrotik/equipo que querés alcanzar a través de la VPN. Ej: <code>192.168.1.0/24</code></small>
-          </label>
+          <label>Redes del cliente (formato CIDR)</label>
+          <div v-for="(c, i) in cidrs" :key="i" class="net-cidr-row">
+            <input name="cidr" v-model="cidrs[i]" placeholder="192.168.1.0/24"
+                   autocomplete="off" :id="i === 0 ? 'net-cidr-input' : null"
+                   :required="i === 0" @keydown.enter.prevent="addCidrField()">
+            <button type="button" class="btn small warn" v-if="cidrs.length > 1"
+                    @click="cidrs.splice(i, 1)" title="Quitar este segmento">✕</button>
+          </div>
+          <button type="button" class="btn small" @click="addCidrField()" style="margin-top:2px">
+            + Agregar otro segmento
+          </button>
+          <small class="muted" style="display:block; margin-top:8px">
+            Cada LAN detrás del Mikrotik/equipo que querés alcanzar por la VPN. Podés
+            agregar varias de una. Ej: <code>192.168.1.0/24</code>, <code>10.10.0.0/16</code>.
+          </small>
           <div class="row" style="margin-top:16px; gap:10px; justify-content:flex-end">
             <button type="button" class="btn" @click="closeNetModal">Cancelar</button>
-            <button type="submit" class="btn primary">Agregar red</button>
+            <button type="submit" class="btn primary">Agregar redes</button>
           </div>
         </form>
       </div>
@@ -330,9 +340,18 @@ window.addEventListener('DOMContentLoaded', () => {
       const users = ref([]);
       const netModal = ref(null);
 
+      const cidrs = ref(['']);
       function openNetModal(u) {
         netModal.value = u;
+        cidrs.value = [''];
         setTimeout(() => { const el = document.getElementById('net-cidr-input'); if (el) el.focus(); }, 60);
+      }
+      function addCidrField() {
+        cidrs.value.push('');
+        setTimeout(() => {
+          const rows = document.querySelectorAll('.net-cidr-row input');
+          if (rows.length) rows[rows.length - 1].focus();
+        }, 40);
       }
       function closeNetModal() { netModal.value = null; }
       function onKeydown(e) { if (e.key === 'Escape') closeNetModal(); }
@@ -399,7 +418,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (inflight) inflight.abort();
       });
 
-      return { loading, error, role, tenantName, tenant, users, netModal, openNetModal, closeNetModal, confirmUser, confirmNet, confirmDelete, copy };
+      return { loading, error, role, tenantName, tenant, users, netModal, cidrs, addCidrField, openNetModal, closeNetModal, confirmUser, confirmNet, confirmDelete, copy };
     },
     delimiters: ['[[', ']]'],
   }).mount('#tenant-app');
@@ -428,6 +447,15 @@ window.addEventListener('DOMContentLoaded', () => {
     background: #ef4444;
     box-shadow: 0 0 0 3px rgba(239,68,68,.18);
   }
+
+  /* Filas de CIDR en el modal de agregar redes (input + quitar) */
+  .net-cidr-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .net-cidr-row input { flex: 1; margin: 0; }
 
   /* Etiqueta de protocolo del usuario VPN */
   .proto-tag {

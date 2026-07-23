@@ -606,20 +606,36 @@ def add_network(
     request: Request,
     name: str,
     user_id: int,
-    cidr: str = Form(...),
+    cidr: list[str] = Form(...),
     user: dict = Depends(current_user),
 ):
+    """Agrega una o VARIAS redes de cliente al usuario (el modal manda varios campos
+    `cidr`). Best-effort: agrega las válidas y reporta las que fallen."""
     tenant = svc.get_tenant(name)
     if not tenant:
         raise HTTPException(404)
     _require_tenant_access(user, tenant)
-    try:
-        svc.add_network(tenant, user_id, cidr.strip())
+    # dedup preservando orden, ignorando vacíos
+    cidrs = list(dict.fromkeys(c.strip() for c in cidr if c and c.strip()))
+    if not cidrs:
+        _flash(request, "Ingresá al menos un segmento (CIDR).", "error")
+        return RedirectResponse(f"/tenants/{name}", status_code=303)
+    added, errors = [], []
+    for c in cidrs:
+        try:
+            svc.add_network(tenant, user_id, c)
+            added.append(c)
+        except svc.ServiceError as e:
+            errors.append(f"{c}: {e}")
+    if added:
         events.log("network_added", "network", actor=user, tenant=tenant,
-                   details=f"cidr={cidr.strip()} vpn_user_id={user_id}", ip=_client_ip(request))
-        _flash(request, f"Red {cidr} agregada.", "success")
-    except svc.ServiceError as e:
-        _flash(request, str(e), "error")
+                   details=f"cidrs={','.join(added)} vpn_user_id={user_id}", ip=_client_ip(request))
+    msg = ""
+    if added:
+        msg += f"{len(added)} red(es) agregada(s): {', '.join(added)}."
+    if errors:
+        msg += (" " if msg else "") + "No se agregaron: " + "; ".join(errors[:4])
+    _flash(request, msg or "Nada que agregar.", "success" if added and not errors else "info")
     return RedirectResponse(f"/tenants/{name}", status_code=303)
 
 
