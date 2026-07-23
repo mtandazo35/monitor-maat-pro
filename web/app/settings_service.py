@@ -161,6 +161,28 @@ def save_tenants_config(tenants_domain: str, ssl_mode: str) -> None:
         set_value("cf_proxied", "1")
 
 
+# Versión de Uptime Kuma para los contenedores de cada tenant. Se fija por TAG de
+# major (rolling): "1" = última 1.x estable; "2" = 2.x (upgrade mayor, migra la DB).
+# Se guarda solo el tag (no la imagen completa) para no permitir inyectar imágenes.
+KUMA_TAGS = ("1", "2")
+
+
+def get_kuma_tag() -> str:
+    t = get("kuma_tag", "1")
+    return t if t in KUMA_TAGS else "1"
+
+
+def set_kuma_tag(tag: str) -> None:
+    if tag not in KUMA_TAGS:
+        raise ValueError(f"Tag de Kuma inválido: {tag} (use {' o '.join(KUMA_TAGS)})")
+    set_value("kuma_tag", tag)
+
+
+def kuma_image() -> str:
+    """Imagen completa de Uptime Kuma según el tag configurado."""
+    return f"louislam/uptime-kuma:{get_kuma_tag()}"
+
+
 def get_billing_config() -> dict:
     """Configuración global de facturación. Por ahora solo la hora de suspensión:
     si paid_until = hoy, el cliente sigue activo hasta esa hora (Ecuador)."""

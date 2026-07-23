@@ -65,7 +65,7 @@ def _tenant_owner(tenant: dict):
 def _prewarm_images() -> None:
     try:
         subprocess.run(
-            ["docker", "pull", "louislam/uptime-kuma:1"],
+            ["docker", "pull", settings.kuma_image()],
             capture_output=True,
             timeout=600,
         )
@@ -1457,6 +1457,8 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
             "cf": {k: v for k, v in settings.get_cloudflare_config().items() if k != "token"},
             "certbot_status": certbot.status(),
             "origin_status": cf_origin.status(),
+            "kuma_tag": settings.get_kuma_tag(),
+            "kuma_image": settings.kuma_image(),
             "tenants": svc.list_tenants(),
             "public_ip": config.PUBLIC_IP or "",
             "caddy_running": caddy.caddy_container_running(),
@@ -1574,6 +1576,35 @@ def origin_cert_save(
         except cloudflare.CloudflareError as e:
             extra = f" · ⚠ poné la zona en Full strict a mano ({e})"
     _flash(request, f"{msg} · {a_msg}{extra}", "success" if a_ok else "info")
+    return RedirectResponse("/settings/network", status_code=303)
+
+
+@app.post("/settings/update-kuma")
+def update_kuma_all(
+    request: Request,
+    kuma_tag: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    """Actualiza Uptime Kuma en todos los tenants: fija el tag (1|2), hace pull de la
+    imagen y recrea SOLO el kuma de cada tenant (no corta el VPN)."""
+    try:
+        if kuma_tag:
+            settings.set_kuma_tag(kuma_tag)
+    except ValueError as e:
+        _flash(request, str(e), "error")
+        return RedirectResponse("/settings/network", status_code=303)
+    res = svc.update_all_kuma()
+    parts = [f"Imagen: {res['image']}", res["pull_msg"]]
+    if res["ok"]:
+        parts.append(f"{len(res['ok'])} tenant(s) actualizado(s)")
+    if res["errors"]:
+        parts.append("errores: " + "; ".join(res["errors"][:3]))
+    if not res["ok"] and not res["errors"]:
+        parts.append("no hay tenants que actualizar (el próximo se crea ya con esta versión)")
+    msg = " · ".join(parts)
+    events.log("kuma_updated", "settings", actor=user, details=msg[:200],
+               severity="info" if not res["errors"] else "warn", ip=_client_ip(request))
+    _flash(request, msg, "success" if not res["errors"] else "info")
     return RedirectResponse("/settings/network", status_code=303)
 
 

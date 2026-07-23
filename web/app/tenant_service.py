@@ -14,6 +14,7 @@ from jinja2 import Template
 
 import config
 import crypto
+import settings_service
 from db import connect, now_iso
 
 
@@ -78,6 +79,7 @@ def _render_compose(tenant: dict) -> str:
         tenant=tenant,
         base_path=str(config.BASE_PATH),
         kuma_bind=config.KUMA_BIND,
+        kuma_image=settings_service.kuma_image(),
     )
 
 
@@ -257,6 +259,48 @@ def compose_up(name: str) -> None:
     _run(
         ["docker", "compose", "-f", str(_compose_file(name)), "up", "-d"],
     )
+
+
+def pull_kuma_image() -> tuple[bool, str]:
+    """`docker pull` de la imagen de Kuma según el tag configurado. (ok, mensaje)."""
+    img = settings_service.kuma_image()
+    r = _run(["docker", "pull", img], check=False)
+    out = ((r.stdout or "") + (r.stderr or "")).strip()
+    ok = r.returncode == 0
+    last = out.splitlines()[-1] if out else ""
+    return ok, f"{img}: {last}" if ok else f"pull {img} falló: {last or out[-200:]}"
+
+
+def recreate_kuma(name: str) -> tuple[bool, str]:
+    """Recrea SOLO el contenedor kuma del tenant con la imagen actual (re-render del
+    compose con el tag vigente). NO toca openvpn → no corta el VPN de los clientes.
+    kuma usa network_mode: service:openvpn y re-entra al netns del openvpn en marcha."""
+    tenant = get_tenant(name)
+    if not tenant:
+        return False, f"{name}: tenant no encontrado"
+    desired = _render_compose(tenant)
+    path = _compose_file(name)
+    try:
+        path.write_text(desired, encoding="utf-8")
+    except OSError as e:
+        return False, f"{name}: no pude escribir el compose ({e})"
+    r = _run(["docker", "compose", "-f", str(path), "up", "-d",
+              "--force-recreate", "kuma"], check=False)
+    if r.returncode != 0:
+        return False, f"{name}: recreación falló ({((r.stderr or '') + (r.stdout or '')).strip()[-200:]})"
+    return True, f"{name}: kuma actualizado"
+
+
+def update_all_kuma() -> dict:
+    """Actualiza Uptime Kuma en TODOS los tenants: pull de la imagen del tag vigente +
+    recreación del kuma de cada tenant. Best-effort: acumula ok/errores por tenant."""
+    p_ok, p_msg = pull_kuma_image()
+    ok, errors = [], []
+    for t in list_tenants():
+        r_ok, r_msg = recreate_kuma(t["name"])
+        (ok if r_ok else errors).append(r_msg)
+    return {"pull_ok": p_ok, "pull_msg": p_msg, "ok": ok, "errors": errors,
+            "image": settings_service.kuma_image()}
 
 
 def ensure_compose_current(name: str) -> bool:

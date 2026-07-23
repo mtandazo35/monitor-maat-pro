@@ -493,7 +493,7 @@ sudo chmod 600 /etc/letsencrypt/cloudflare.ini</pre>
   {% if not tenants %}
   <p class="muted">No hay tenants creados todavía.</p>
   {% else %}
-  <div class="tbl-wrap">
+  <div class="tbl-wrap" style="margin-bottom:16px">
     <table class="tbl">
       <thead>
         <tr><th>Tenant</th><th>Kuma URL</th><th>OpenVPN endpoint</th></tr>
@@ -522,5 +522,49 @@ sudo chmod 600 /etc/letsencrypt/cloudflare.ini</pre>
     </table>
   </div>
   {% endif %}
+</section>
+
+{# === Mantenimiento: versión de Uptime Kuma === #}
+<section class="card">
+  <h2 class="form-section">🩺 Uptime Kuma — versión</h2>
+  <p class="muted">
+    Imagen actual de los Kuma de tus clientes:
+    <code>{{ kuma_image }}</code> (tag <strong>{{ kuma_tag }}</strong>).
+    El tag <code>1</code> es la última <strong>1.x estable</strong>; el <code>2</code> es
+    <strong>2.x</strong> (última 2.4.0) — <u>migra la base de datos de cada Kuma, es un solo sentido</u>.
+    Al cambiar el tag y actualizar se hace <code>docker pull</code> y se recrea <strong>solo el
+    contenedor Kuma</strong> de cada tenant (no corta el OpenVPN de los clientes).
+  </p>
+
+  <form method="post" action="/settings/update-kuma"
+        onsubmit="return confirm('Se hará pull de la imagen y se recreará el Kuma de TODOS los tenants. Si pasás a la 2.x, la base de cada Kuma migra (no se puede volver atrás sin backup). ¿Continuar?')">
+    <div class="https-toggle mode-radio">
+      <label class="https-toggle-row">
+        <input type="radio" name="kuma_tag" value="1" {% if kuma_tag == '1' %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>1 · Uptime Kuma 1.x (estable)</strong>
+          <small class="muted">La versión que corrés hoy. Segura para producción. Kuma seguirá
+            mostrando el aviso de que existe la 2.x.</small>
+        </span>
+      </label>
+    </div>
+    <div class="https-toggle mode-radio">
+      <label class="https-toggle-row">
+        <input type="radio" name="kuma_tag" value="2" {% if kuma_tag == '2' %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>2 · Uptime Kuma 2.x (2.4.0)</strong>
+          <small class="muted">Última versión; quita el aviso de actualización. Es upgrade mayor:
+            <strong>migra los datos de cada Kuma</strong>. Probalo primero en un tenant de prueba.</small>
+        </span>
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button type="submit" class="primary">⟳ Aplicar y recrear Kuma de todos los tenants</button>
+    </div>
+    <p class="muted small" style="margin-top:8px">
+      ⚠ Antes de pasar a la 2.x en producción, respaldá <code>/opt/kumavpn/tenants/&lt;tenant&gt;/kuma</code>
+      de cada cliente. Los tenants nuevos ya se crean con el tag elegido.
+    </p>
+  </form>
 </section>
 {% endblock %}

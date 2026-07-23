@@ -26,7 +26,7 @@ services:
       - {{ base_path }}/tenants/{{ tenant.name }}/openvpn:/etc/openvpn
 
   kuma:
-    image: louislam/uptime-kuma:1
+    image: {{ kuma_image | default('louislam/uptime-kuma:1') }}
     container_name: kuma-{{ tenant.name }}
     restart: unless-stopped
     network_mode: "service:openvpn"
