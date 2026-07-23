@@ -13,6 +13,16 @@
         Debe arrancar con letra minúscula. Permitido: a-z, 0-9, guion. 2-31 chars.
       </small>
     </label>
+    <label>Versión de Uptime Kuma
+      <select name="kuma_tag">
+        <option value="1" {% if kuma_default == '1' %}selected{% endif %}>1 · 1.x estable (recomendada)</option>
+        <option value="2" {% if kuma_default == '2' %}selected{% endif %}>2 · 2.x (2.4.0, última)</option>
+      </select>
+      <small class="muted">
+        Podés cambiarla después por-tenant (subir o bajar). La 2.x migra la base al primer
+        arranque; bajar a 1.x luego requiere el respaldo automático.
+      </small>
+    </label>
     <div class="row">
       <button type="submit" class="primary" :disabled="!valid">Crear</button>
       <a href="/" class="btn">Cancelar</a>

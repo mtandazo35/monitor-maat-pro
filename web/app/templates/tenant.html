@@ -80,6 +80,37 @@
     </div>
   </section>
 
+  {% if is_admin %}
+  <section class="card">
+    <div class="row between">
+      <h2>🩺 Versión de Uptime Kuma</h2>
+      <span class="role-pill role-admin">v{{ kuma_tag }} · {{ kuma_image }}</span>
+    </div>
+    <p class="muted">
+      Cambiá la versión del Kuma de <strong>este</strong> tenant (subir o bajar). Se
+      respaldan los datos antes; al <strong>bajar</strong> se restaura el respaldo de la
+      versión destino (1.x no puede abrir una base ya migrada por 2.x). No corta el VPN.
+    </p>
+    <form action="/tenants/{{ tenant_name }}/kuma-version" method="post"
+          onsubmit="return confirm('Se respaldará el Kuma de este tenant y se recreará en la versión elegida. Si bajás de versión se restaurará el respaldo previo. ¿Continuar?')">
+      <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap">
+        <label style="margin:0">Versión
+          <select name="kuma_tag">
+            <option value="1" {% if kuma_tag == '1' %}selected{% endif %}>1 · 1.x estable</option>
+            <option value="2" {% if kuma_tag == '2' %}selected{% endif %}>2 · 2.x (2.4.0)</option>
+          </select>
+        </label>
+        <button type="submit" class="btn primary">Aplicar versión</button>
+      </div>
+      <p class="muted small" style="margin-top:8px">
+        ⚠ Subir a 2.x migra la base del Kuma (one-way). Bajar solo funciona si este tenant
+        estuvo antes en esa versión (existe respaldo). Respaldos en
+        <code>/opt/kumavpn/backups/kuma/</code>.
+      </p>
+    </form>
+  </section>
+  {% endif %}
+
   <section class="card">
     <div class="row between">
       <h2>Usuarios VPN</h2>

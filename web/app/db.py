@@ -143,6 +143,11 @@ def init_db() -> None:
             con.execute("ALTER TABLE tenants ADD COLUMN wg_port INTEGER")
         if "wg_subnet" not in cols:
             con.execute("ALTER TABLE tenants ADD COLUMN wg_subnet TEXT")
+
+        # Migración: versión de Uptime Kuma por tenant (1|2). NULL = usa el default
+        # global (settings.kuma_tag). Permite subir/bajar de versión por cliente.
+        if "kuma_tag" not in cols:
+            con.execute("ALTER TABLE tenants ADD COLUMN kuma_tag TEXT")
         try:
             import config as _cfg
             con.execute(

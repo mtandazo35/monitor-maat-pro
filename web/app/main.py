@@ -442,7 +442,8 @@ def new_tenant_form(request: Request, user: dict = Depends(current_user)):
     require_paid(request, user)
     return templates.TemplateResponse(
         "new_tenant.html",
-        {"request": request, "user": user, "flash": _pop_flash(request)},
+        {"request": request, "user": user, "flash": _pop_flash(request),
+         "kuma_default": settings.get_kuma_tag()},
     )
 
 
@@ -450,12 +451,13 @@ def new_tenant_form(request: Request, user: dict = Depends(current_user)):
 def new_tenant_submit(
     request: Request,
     name: str = Form(...),
+    kuma_tag: str = Form(""),
     user: dict = Depends(current_user),
 ):
     require_paid(request, user)
     name = name.strip().lower()
     try:
-        svc.create_tenant(name, owner=user)
+        svc.create_tenant(name, owner=user, kuma_tag=kuma_tag or None)
     except svc.ServiceError as e:
         notify.send_admin(f"⚠️ <b>Error creando tenant</b>\nNombre: <code>{name}</code>\nUsuario: {user['username']}\nError: {e}")
         _flash(request, str(e), "error")
@@ -516,6 +518,9 @@ def tenant_detail(request: Request, name: str, user: dict = Depends(current_user
             "tenant_name": tenant["name"],
             "user": user,
             "flash": _pop_flash(request),
+            "is_admin": user.get("role") == "admin",
+            "kuma_tag": svc.tenant_kuma_tag(tenant),
+            "kuma_image": svc.tenant_kuma_image(tenant),
         },
     )
 
@@ -652,6 +657,30 @@ def restart_tenant(request: Request, name: str, user: dict = Depends(current_use
         events.log("tenant_restart_fail", "tenant", actor=user, tenant=tenant, severity="error", details=str(e))
         notify.send_admin(f"❌ Error reiniciando tenant <b>{name}</b>: {e}")
         _flash(request, f"Error reiniciando: {e}", "error")
+    return RedirectResponse(f"/tenants/{name}", status_code=303)
+
+
+@app.post("/tenants/{name}/kuma-version")
+def kuma_version_tenant(
+    request: Request,
+    name: str,
+    kuma_tag: str = Form(...),
+    user: dict = Depends(current_admin),
+):
+    """Cambia la versión de Kuma de ESTE tenant (subir o bajar), uno a uno. Respalda
+    los datos antes; al bajar restaura el respaldo de la versión destino. No toca
+    openvpn → no corta el VPN. Admin-only (una subida migra la DB del Kuma)."""
+    tenant = svc.get_tenant(name)
+    if not tenant: raise HTTPException(404)
+    try:
+        ok, msg = svc.set_tenant_kuma_tag(name, kuma_tag)
+        events.log("kuma_version_changed", "tenant", actor=user, tenant=tenant,
+                   details=msg[:200], severity="info" if ok else "error", ip=_client_ip(request))
+        _flash(request, msg, "success" if ok else "error")
+    except Exception as e:
+        events.log("kuma_version_fail", "tenant", actor=user, tenant=tenant,
+                   severity="error", details=str(e))
+        _flash(request, f"Error cambiando versión de Kuma de {name}: {e}", "error")
     return RedirectResponse(f"/tenants/{name}", status_code=303)
 
 
@@ -1593,14 +1622,14 @@ def update_kuma_all(
     except ValueError as e:
         _flash(request, str(e), "error")
         return RedirectResponse("/settings/network", status_code=303)
-    res = svc.update_all_kuma()
-    parts = [f"Imagen: {res['image']}", res["pull_msg"]]
+    res = svc.update_all_kuma()  # usa el default global recién fijado
+    parts = [f"Default para tenants nuevos: {res['image']}"]
     if res["ok"]:
-        parts.append(f"{len(res['ok'])} tenant(s) actualizado(s)")
+        parts.append(f"{len(res['ok'])} tenant(s) llevado(s) a v{res['tag']}")
     if res["errors"]:
         parts.append("errores: " + "; ".join(res["errors"][:3]))
     if not res["ok"] and not res["errors"]:
-        parts.append("no hay tenants que actualizar (el próximo se crea ya con esta versión)")
+        parts.append("sin tenants existentes (los nuevos se crean ya con esta versión)")
     msg = " · ".join(parts)
     events.log("kuma_updated", "settings", actor=user, details=msg[:200],
                severity="info" if not res["errors"] else "warn", ip=_client_ip(request))

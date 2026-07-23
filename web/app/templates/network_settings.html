@@ -528,12 +528,14 @@ sudo chmod 600 /etc/letsencrypt/cloudflare.ini</pre>
 <section class="card">
   <h2 class="form-section">🩺 Uptime Kuma — versión</h2>
   <p class="muted">
-    Imagen actual de los Kuma de tus clientes:
+    Versión <strong>por defecto</strong> para los tenants <strong>nuevos</strong>:
     <code>{{ kuma_image }}</code> (tag <strong>{{ kuma_tag }}</strong>).
     El tag <code>1</code> es la última <strong>1.x estable</strong>; el <code>2</code> es
-    <strong>2.x</strong> (última 2.4.0) — <u>migra la base de datos de cada Kuma, es un solo sentido</u>.
-    Al cambiar el tag y actualizar se hace <code>docker pull</code> y se recrea <strong>solo el
-    contenedor Kuma</strong> de cada tenant (no corta el OpenVPN de los clientes).
+    <strong>2.x</strong> (última 2.4.0) — <u>migra la base de cada Kuma, es un solo sentido</u>.
+    Cada tenant puede tener <strong>su propia versión</strong> (se elige al crearlo y se cambia
+    desde la página del tenant, subir o bajar con respaldo automático). El botón de abajo fija
+    este default <strong>y lleva a TODOS los tenants existentes a esta versión</strong> (recrea
+    solo el Kuma de cada uno, no corta el OpenVPN).
   </p>
 
   <form method="post" action="/settings/update-kuma"

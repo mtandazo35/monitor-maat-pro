@@ -72,6 +72,18 @@ def _compose_file(name: str) -> Path:
     return _tenant_dir(name) / "docker-compose.yml"
 
 
+def tenant_kuma_tag(tenant: dict) -> str:
+    """Versión de Kuma efectiva del tenant: su kuma_tag propio, o el default global."""
+    t = (tenant or {}).get("kuma_tag")
+    if t in settings_service.KUMA_TAGS:
+        return t
+    return settings_service.get_kuma_tag()
+
+
+def tenant_kuma_image(tenant: dict) -> str:
+    return f"louislam/uptime-kuma:{tenant_kuma_tag(tenant)}"
+
+
 def _render_compose(tenant: dict) -> str:
     template_text = config.COMPOSE_TEMPLATE.read_text(encoding="utf-8")
     template = Template(template_text, keep_trailing_newline=True)
@@ -79,7 +91,7 @@ def _render_compose(tenant: dict) -> str:
         tenant=tenant,
         base_path=str(config.BASE_PATH),
         kuma_bind=config.KUMA_BIND,
-        kuma_image=settings_service.kuma_image(),
+        kuma_image=tenant_kuma_image(tenant),
     )
 
 
@@ -167,13 +179,17 @@ def get_tenant(name: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def create_tenant(name: str, owner: dict) -> dict:
+def create_tenant(name: str, owner: dict, kuma_tag: Optional[str] = None) -> dict:
     if not TENANT_NAME_RE.match(name):
         raise ServiceError(
             "Nombre inválido. Solo minúsculas, números y guiones; inicia con letra; 2-31 caracteres."
         )
     if get_tenant(name):
         raise ServiceError(f"Ya existe un tenant llamado '{name}'.")
+
+    # Versión de Kuma elegida al crear (1|2). Si no viene o es inválida, se guarda
+    # NULL → el tenant hereda el default global.
+    ktag = kuma_tag if kuma_tag in settings_service.KUMA_TAGS else None
 
     # Quota check (admin = ilimitado)
     if owner["role"] != "admin":
@@ -209,6 +225,7 @@ def create_tenant(name: str, owner: dict) -> dict:
             "wg_subnet": f"{config.WG_SUBNET_PREFIX}.{slot}.0",
             "public_ip": public_ip,
             "created_at": now_iso(),
+            "kuma_tag": ktag,
         }
         try:
             with connect() as con:
@@ -216,14 +233,16 @@ def create_tenant(name: str, owner: dict) -> dict:
                     """
                     INSERT INTO tenants
                     (name, slot, vpn_port, kuma_port, vpn_subnet, vpn_mask,
-                     docker_subnet, wg_port, wg_subnet, public_ip, owner_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     docker_subnet, wg_port, wg_subnet, public_ip, owner_id, created_at,
+                     kuma_tag)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         cand["name"], cand["slot"], cand["vpn_port"],
                         cand["kuma_port"], cand["vpn_subnet"], cand["vpn_mask"],
                         cand["docker_subnet"], cand["wg_port"], cand["wg_subnet"],
                         cand["public_ip"], owner["id"], cand["created_at"],
+                        cand["kuma_tag"],
                     ),
                 )
             tenant = cand
@@ -261,9 +280,10 @@ def compose_up(name: str) -> None:
     )
 
 
-def pull_kuma_image() -> tuple[bool, str]:
-    """`docker pull` de la imagen de Kuma según el tag configurado. (ok, mensaje)."""
-    img = settings_service.kuma_image()
+def pull_kuma_image(tag: Optional[str] = None) -> tuple[bool, str]:
+    """`docker pull` de la imagen de Kuma para un tag (default: global). (ok, mensaje)."""
+    t = tag if tag in settings_service.KUMA_TAGS else settings_service.get_kuma_tag()
+    img = f"louislam/uptime-kuma:{t}"
     r = _run(["docker", "pull", img], check=False)
     out = ((r.stdout or "") + (r.stderr or "")).strip()
     ok = r.returncode == 0
@@ -272,9 +292,9 @@ def pull_kuma_image() -> tuple[bool, str]:
 
 
 def recreate_kuma(name: str) -> tuple[bool, str]:
-    """Recrea SOLO el contenedor kuma del tenant con la imagen actual (re-render del
-    compose con el tag vigente). NO toca openvpn → no corta el VPN de los clientes.
-    kuma usa network_mode: service:openvpn y re-entra al netns del openvpn en marcha."""
+    """Recrea SOLO el contenedor kuma del tenant con su imagen vigente (re-render del
+    compose). NO toca openvpn → no corta el VPN de los clientes. kuma usa
+    network_mode: service:openvpn y re-entra al netns del openvpn en marcha."""
     tenant = get_tenant(name)
     if not tenant:
         return False, f"{name}: tenant no encontrado"
@@ -288,19 +308,103 @@ def recreate_kuma(name: str) -> tuple[bool, str]:
               "--force-recreate", "kuma"], check=False)
     if r.returncode != 0:
         return False, f"{name}: recreación falló ({((r.stderr or '') + (r.stdout or '')).strip()[-200:]})"
-    return True, f"{name}: kuma actualizado"
+    return True, f"{name}: kuma recreado ({tenant_kuma_image(tenant)})"
 
 
-def update_all_kuma() -> dict:
-    """Actualiza Uptime Kuma en TODOS los tenants: pull de la imagen del tag vigente +
-    recreación del kuma de cada tenant. Best-effort: acumula ok/errores por tenant."""
-    p_ok, p_msg = pull_kuma_image()
+# ---- Backup / restore del volumen de datos del Kuma de un tenant ----
+# La 2.x migra el SQLite de Kuma; 1.x NO puede abrir una base ya migrada. Por eso,
+# antes de CADA cambio de versión respaldamos el dir de datos, etiquetado con la
+# versión desde la que se sale; bajar de versión = restaurar el respaldo de esa
+# versión (única forma de que la versión vieja arranque).
+
+def _kuma_dir(name: str) -> Path:
+    return _tenant_dir(name) / "kuma"
+
+
+def _kuma_backups_dir() -> Path:
+    d = config.BASE_PATH / "backups" / "kuma"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def backup_kuma(name: str, from_tag: str) -> Optional[Path]:
+    """tar.gz del dir de datos del Kuma, etiquetado con la versión de la que se sale.
+    Devuelve el path del backup, o None si no había datos que respaldar."""
+    src = _kuma_dir(name)
+    if not src.exists() or not any(src.iterdir()):
+        return None
+    ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    dest = _kuma_backups_dir() / f"{name}-v{from_tag}-{ts}.tar.gz"
+    _run(["tar", "-czf", str(dest), "-C", str(src.parent), src.name])
+    return dest
+
+
+def _latest_kuma_backup(name: str, tag: str) -> Optional[Path]:
+    """El backup más reciente del tenant tomado ESTANDO en la versión `tag`."""
+    cands = sorted(_kuma_backups_dir().glob(f"{name}-v{tag}-*.tar.gz"))
+    return cands[-1] if cands else None
+
+
+def _restore_kuma(name: str, backup: Path) -> None:
+    """Detiene kuma, vacía el dir de datos y restaura el tar.gz."""
+    path = _compose_file(name)
+    _run(["docker", "compose", "-f", str(path), "stop", "kuma"], check=False)
+    dst = _kuma_dir(name)
+    shutil.rmtree(dst, ignore_errors=True)
+    dst.mkdir(parents=True, exist_ok=True)
+    _run(["tar", "-xzf", str(backup), "-C", str(dst.parent)])
+
+
+def set_tenant_kuma_tag(name: str, new_tag: str) -> tuple[bool, str]:
+    """Cambia la versión de Kuma de UN tenant (subir o bajar), de forma segura:
+    - respalda el dir de datos antes de tocar nada (etiquetado con la versión actual);
+    - al BAJAR (p.ej. 2→1) restaura el último respaldo de la versión destino, porque
+      la versión vieja no puede abrir una base ya migrada por la nueva;
+    - hace pull de la imagen destino y recrea SOLO el kuma (no corta el VPN).
+    Devuelve (ok, mensaje)."""
+    if new_tag not in settings_service.KUMA_TAGS:
+        return False, f"Versión inválida: {new_tag}"
+    tenant = get_tenant(name)
+    if not tenant:
+        return False, f"{name}: tenant no encontrado"
+    cur = tenant_kuma_tag(tenant)
+
+    # Respaldo del estado actual (para poder volver a ESTA versión luego).
+    bkp = backup_kuma(name, cur)
+    note = f" (respaldo {bkp.name})" if bkp else ""
+
+    downgrading = new_tag < cur
+    if downgrading:
+        restore = _latest_kuma_backup(name, new_tag)
+        if not restore:
+            return False, (
+                f"{name}: no hay respaldo de la versión {new_tag} (este Kuma nunca "
+                f"estuvo en {new_tag} o se respaldó antes de existir). Bajar ahora "
+                f"rompería la base ya migrada por la {cur}. Se dejó un respaldo de la "
+                f"{cur}{note}; para usar {new_tag} habría que empezar el Kuma limpio.")
+        _restore_kuma(name, restore)
+        note += f" · restaurado {restore.name}"
+
+    # Persistir la versión del tenant y recrear con la imagen nueva.
+    with connect() as con:
+        con.execute("UPDATE tenants SET kuma_tag = ? WHERE name = ?", (new_tag, name))
+    pull_kuma_image(new_tag)
+    ok, msg = recreate_kuma(name)
+    verb = "bajado" if downgrading else ("subido" if new_tag > cur else "recreado")
+    return ok, (f"{name}: Kuma {verb} {cur}→{new_tag}{note} · {msg}" if ok
+                else f"{name}: cambio a {new_tag} falló · {msg}")
+
+
+def update_all_kuma(tag: Optional[str] = None) -> dict:
+    """Lleva TODOS los tenants a una versión (default: global). Reusa la lógica segura
+    por-tenant (respaldo + restore al bajar). Best-effort: acumula ok/errores."""
+    t = tag if tag in settings_service.KUMA_TAGS else settings_service.get_kuma_tag()
+    pull_kuma_image(t)
     ok, errors = [], []
-    for t in list_tenants():
-        r_ok, r_msg = recreate_kuma(t["name"])
+    for tenant in list_tenants():
+        r_ok, r_msg = set_tenant_kuma_tag(tenant["name"], t)
         (ok if r_ok else errors).append(r_msg)
-    return {"pull_ok": p_ok, "pull_msg": p_msg, "ok": ok, "errors": errors,
-            "image": settings_service.kuma_image()}
+    return {"ok": ok, "errors": errors, "image": f"louislam/uptime-kuma:{t}", "tag": t}
 
 
 def ensure_compose_current(name: str) -> bool:
