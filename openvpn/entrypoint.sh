@@ -231,6 +231,18 @@ iptables -C INPUT -i wg0 -p icmp -j ACCEPT 2>/dev/null || \
 # - internet (destino público) tampoco se ve afectado;
 # - se permite el retorno de conexiones ya establecidas (respuestas a clientes VPN
 #   que entran por el uplink), para no romper el propio VPN.
+# Defensa en profundidad: SSH (y la gestión de estos contenedores) NUNCA accesible
+# desde un cliente VPN. El aislamiento INPUT/FORWARD de arriba ya DROPea todo acceso
+# de un cliente al contenedor y al host; esto lo hace EXPLÍCITO para tcp/22 por si a
+# futuro se afloja alguna regla, y protege ante un MikroTik/cliente comprometido que
+# quiera pivotar a donde corre todo. NO afecta el SSH cliente↔cliente entre sitios
+# (eso pasa por el hub en FORWARD, no por INPUT).
+echo "[setup] Bloqueo explícito de SSH al contenedor desde clientes VPN (tun0/wg0)..."
+for IFACE in tun0 wg0; do
+    iptables -C INPUT -i "$IFACE" -p tcp --dport 22 -j DROP 2>/dev/null || \
+        iptables -I INPUT -i "$IFACE" -p tcp --dport 22 -j DROP
+done
+
 echo "[setup] Aislamiento de egress (OUTPUT del contenedor hacia redes privadas del host)..."
 UPLINK="$(ip route show default 2>/dev/null | awk '{print $5; exit}')"
 UPLINK="${UPLINK:-eth0}"
