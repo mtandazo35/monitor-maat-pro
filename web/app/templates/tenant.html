@@ -155,6 +155,8 @@
           <tbody>
             <tr v-for="u in users" :key="u.id">
               <td>
+                <span class="conn-dot" :class="u.connected ? 'conn-up' : 'conn-down'"
+                      :title="u.connected ? 'Conectado' : 'Desconectado'"></span>
                 <code v-text="u.username"></code>
                 <span class="proto-tag" :class="'proto-' + (u.proto || 'openvpn')"
                       v-text="(u.proto || 'openvpn') === 'wireguard' ? 'WG' : 'OVPN'"></span>
@@ -212,6 +214,8 @@
         <article v-for="u in users" :key="u.id" class="user-card">
           <div class="user-card-head">
             <span>
+              <span class="conn-dot" :class="u.connected ? 'conn-up' : 'conn-down'"
+                    :title="u.connected ? 'Conectado' : 'Desconectado'"></span>
               <code class="user-name" v-text="u.username"></code>
               <span class="proto-tag" :class="'proto-' + (u.proto || 'openvpn')"
                     v-text="(u.proto || 'openvpn') === 'wireguard' ? 'WG' : 'OVPN'"></span>
@@ -406,6 +410,24 @@ window.addEventListener('DOMContentLoaded', () => {
   [v-cloak] { visibility: hidden; }
   .nets-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .nets-row .nets { margin: 0; }
+
+  /* Indicador de conexión del usuario VPN (verde=conectado / rojo=caído) */
+  .conn-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 7px;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+  .conn-up {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34,197,94,.20);
+  }
+  .conn-down {
+    background: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239,68,68,.18);
+  }
 
   /* Etiqueta de protocolo del usuario VPN */
   .proto-tag {

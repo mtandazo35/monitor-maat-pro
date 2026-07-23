@@ -559,6 +559,63 @@ def list_vpn_users(tenant_id: int) -> list[dict]:
     return [_decrypt_user(dict(r)) for r in rows]
 
 
+# Un peer WireGuard se considera CONECTADO si tuvo handshake en los últimos N seg.
+_WG_HANDSHAKE_MAX_AGE_S = 180
+
+
+def connection_status(tenant: dict, users: Optional[list] = None) -> dict:
+    """Devuelve {user_id: bool} con el estado de conexión VPN de cada usuario.
+    - OpenVPN: el usuario (Common Name) aparece en /var/log/openvpn-status.log.
+    - WireGuard: el peer (por su clave pública) tuvo handshake hace <180s.
+    Si el contenedor no corre, todos quedan desconectados. Best-effort (no lanza)."""
+    if users is None:
+        users = list_vpn_users(tenant["id"])
+    if not users:
+        return {}
+    container = _ovpn_container(tenant["name"])
+    if container_status(container) != "running":
+        return {u["id"]: False for u in users}
+
+    # OpenVPN: Common Names conectados (sección CLIENT LIST del status file)
+    ovpn_cns = set()
+    r = _docker_exec(container, ["cat", "/var/log/openvpn-status.log"])
+    if r.returncode == 0:
+        in_clients = False
+        for line in (r.stdout or "").splitlines():
+            s = line.strip()
+            if s.startswith("Common Name,"):
+                in_clients = True
+                continue
+            if s.startswith(("ROUTING TABLE", "GLOBAL STATS", "OpenVPN CLIENT LIST", "Updated")):
+                if not s.startswith("Updated"):
+                    in_clients = False
+                continue
+            if in_clients and "," in s:
+                ovpn_cns.add(s.split(",", 1)[0])
+
+    # WireGuard: epoch del último handshake por clave pública (`wg show wg0 dump`)
+    wg_hs = {}
+    r = _docker_exec(container, ["wg", "show", "wg0", "dump"])
+    if r.returncode == 0:
+        for line in (r.stdout or "").splitlines()[1:]:  # 1ra línea = interfaz (server)
+            f = line.split("\t")
+            if len(f) >= 5:
+                try:
+                    wg_hs[f[0]] = int(f[4])
+                except ValueError:
+                    pass
+
+    now = time.time()
+    out = {}
+    for u in users:
+        if (u.get("proto") or "openvpn") == "wireguard":
+            hs = wg_hs.get(u.get("wg_pub"), 0)
+            out[u["id"]] = bool(hs) and (now - hs) < _WG_HANDSHAKE_MAX_AGE_S
+        else:
+            out[u["id"]] = u.get("username") in ovpn_cns
+    return out
+
+
 def _user_subnet(tenant: dict, proto: str) -> str:
     """Subred del tenant según protocolo. WireGuard usa una propia para no
     solaparse con la de OpenVPN (que rutea con topology subnet sobre tun0)."""

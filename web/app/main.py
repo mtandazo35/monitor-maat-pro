@@ -532,7 +532,9 @@ def api_tenant_detail(name: str, user: dict = Depends(current_user)):
         raise HTTPException(404)
     _require_tenant_access(user, tenant)
     users_list = svc.list_vpn_users(tenant["id"])
+    conn = svc.connection_status(tenant, users_list)
     for u in users_list:
+        u["connected"] = conn.get(u["id"], False)
         u["networks"] = svc.list_networks(u["id"])
         u["mikrotik"] = svc.mikrotik_snippet(tenant, u)
         u["debian"] = svc.debian_snippet(tenant, u)
