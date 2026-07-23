@@ -1429,15 +1429,18 @@ def _apply_network_stack() -> tuple[bool, str]:
         ok = ok and c_ok
 
     if mode == "cf_origin" and nc.get("tenants_domain"):
-        # Poner la zona en Full (strict) para validar el cert de origen. Best-effort:
-        # si el token no tiene permiso Zone Settings:Edit, se avisa y se sigue.
+        # SSL de la zona: 'strict' solo si ya está el cert de origen; si falta,
+        # 'full' (no strict) para que el cert actual siga validando detrás del proxy
+        # y NO haya downtime (con strict, un cert no-Origin-CA daría error 526).
+        has_cert = cf_origin.cert_exists()
+        ssl_value = "strict" if has_cert else "full"
         try:
-            cloudflare.set_zone_ssl_mode(nc["tenants_domain"], "strict")
-            msgs.append("Zona en Full (strict).")
+            cloudflare.set_zone_ssl_mode(nc["tenants_domain"], ssl_value)
+            msgs.append(f"Zona en Full{' (strict)' if has_cert else ''}.")
         except cloudflare.CloudflareError as e:
-            msgs.append(f"⚠ No pude poner la zona en Full strict ({e}); hacelo a mano en Cloudflare.")
-        if not cf_origin.cert_exists():
-            msgs.append("⚠ Falta el cert de origen: pegá el Origin CA abajo para servir HTTPS.")
+            msgs.append(f"⚠ No pude fijar el SSL de la zona ({e}); ponela en Full{' strict' if has_cert else ''} a mano.")
+        if not has_cert:
+            msgs.append("⚠ Falta el cert de origen: pegá el Origin CA abajo (ahí la zona pasa a strict).")
 
     a_ok, a_msg = caddy.apply()
     msgs.append(a_msg)
@@ -1560,7 +1563,17 @@ def origin_cert_save(
     events.log("origin_cert_saved", "settings", actor=user, details=msg[:200],
                ip=_client_ip(request))
     a_ok, a_msg = caddy.apply()
-    _flash(request, f"{msg} · {a_msg}", "success" if a_ok else "info")
+    # Con el cert ya cargado, subir la zona a Full (strict) — validación extremo a
+    # extremo. Best-effort: si el token no puede, se avisa para hacerlo a mano.
+    extra = ""
+    td = settings.get_network_config().get("tenants_domain", "")
+    if td:
+        try:
+            cloudflare.set_zone_ssl_mode(td, "strict")
+            extra = " · zona en Full (strict)"
+        except cloudflare.CloudflareError as e:
+            extra = f" · ⚠ poné la zona en Full strict a mano ({e})"
+    _flash(request, f"{msg} · {a_msg}{extra}", "success" if a_ok else "info")
     return RedirectResponse("/settings/network", status_code=303)
 
 
