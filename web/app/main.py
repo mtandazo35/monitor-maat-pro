@@ -39,6 +39,7 @@ import billing_service as billing
 import payphone_service as payphone
 import caddy_service as caddy
 import certbot_service as certbot
+import cf_origin_service as cf_origin
 import cloudflare_service as cloudflare
 import email_service as mail
 import settings_service as settings
@@ -1427,6 +1428,17 @@ def _apply_network_stack() -> tuple[bool, str]:
         msgs.append(c_msg)
         ok = ok and c_ok
 
+    if mode == "cf_origin" and nc.get("tenants_domain"):
+        # Poner la zona en Full (strict) para validar el cert de origen. Best-effort:
+        # si el token no tiene permiso Zone Settings:Edit, se avisa y se sigue.
+        try:
+            cloudflare.set_zone_ssl_mode(nc["tenants_domain"], "strict")
+            msgs.append("Zona en Full (strict).")
+        except cloudflare.CloudflareError as e:
+            msgs.append(f"⚠ No pude poner la zona en Full strict ({e}); hacelo a mano en Cloudflare.")
+        if not cf_origin.cert_exists():
+            msgs.append("⚠ Falta el cert de origen: pegá el Origin CA abajo para servir HTTPS.")
+
     a_ok, a_msg = caddy.apply()
     msgs.append(a_msg)
     return ok and a_ok, " · ".join(msgs)
@@ -1441,6 +1453,7 @@ def network_settings_form(request: Request, user: dict = Depends(current_admin))
             "cfg": settings.get_network_config(),
             "cf": {k: v for k, v in settings.get_cloudflare_config().items() if k != "token"},
             "certbot_status": certbot.status(),
+            "origin_status": cf_origin.status(),
             "tenants": svc.list_tenants(),
             "public_ip": config.PUBLIC_IP or "",
             "caddy_running": caddy.caddy_container_running(),
@@ -1488,9 +1501,10 @@ def tenants_settings_save(
     user: dict = Depends(current_admin),
 ):
     """Form de dominios de TENANTS (clientes: Kuma + accesos): dominio raíz +
-    modo SSL (caddy | cf_auto | certbot) + token de Cloudflare para los modos
-    que lo usan. Separado a propósito del form del panel."""
-    proxied = bool(cf_proxied)
+    modo SSL (caddy | cf_auto | certbot | cf_origin) + token de Cloudflare para
+    los modos que lo usan. Separado a propósito del form del panel."""
+    # cf_origin exige nube naranja (sin proxy no hay Universal SSL de Cloudflare).
+    proxied = bool(cf_proxied) or ssl_mode == "cf_origin"
     clear = bool(cf_clear)
     # Si mandó un token nuevo, validarlo contra Cloudflare antes de guardarlo
     if cf_api_token.strip() and not clear:
@@ -1510,7 +1524,7 @@ def tenants_settings_save(
                details=f"tenants={tenants_domain} ssl_mode={ssl_mode} clear_token={clear}",
                ip=_client_ip(request))
     cf_cfg = settings.get_cloudflare_config()
-    if ssl_mode in ("cf_auto", "certbot") and not cf_cfg["has_token"]:
+    if ssl_mode in ("cf_auto", "certbot", "cf_origin") and not cf_cfg["has_token"]:
         _flash(request, "Guardado, pero el modo elegido necesita el token de API de "
                         "Cloudflare — pegalo y volvé a guardar.", "info")
         return RedirectResponse("/settings/network", status_code=303)
@@ -1526,6 +1540,27 @@ def network_apply_caddy(request: Request, user: dict = Depends(current_admin)):
     events.log("caddy_apply", "settings", actor=user, details=msg[:200],
                severity="info" if ok else "warn", ip=_client_ip(request))
     _flash(request, msg, "success" if ok else "error")
+    return RedirectResponse("/settings/network", status_code=303)
+
+
+@app.post("/settings/network/origin-cert")
+def origin_cert_save(
+    request: Request,
+    origin_cert: str = Form(""),
+    origin_key: str = Form(""),
+    user: dict = Depends(current_admin),
+):
+    """Guarda el par cert/key del Cloudflare Origin CA (modo cf_origin) y reaplica
+    Caddy para que empiece a servirlo. El cert lo genera el usuario en el dashboard
+    de Cloudflare (SSL/TLS → Origin Server) y lo pega acá; se valida antes de guardar."""
+    ok, msg = cf_origin.save_cert(origin_cert, origin_key)
+    if not ok:
+        _flash(request, f"Cert de origen rechazado: {msg}", "error")
+        return RedirectResponse("/settings/network", status_code=303)
+    events.log("origin_cert_saved", "settings", actor=user, details=msg[:200],
+               ip=_client_ip(request))
+    a_ok, a_msg = caddy.apply()
+    _flash(request, f"{msg} · {a_msg}", "success" if a_ok else "info")
     return RedirectResponse("/settings/network", status_code=303)
 
 

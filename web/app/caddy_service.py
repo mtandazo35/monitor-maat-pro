@@ -33,6 +33,8 @@ def generate_caddyfile() -> str:
     - caddy / cf_auto → cert automático por subdominio (HTTP-01)
     - certbot → cert wildcard emitido por certbot (DNS-01), referenciado con
       `tls` desde /certs (mount read-only de /opt/kumavpn/letsencrypt)
+    - cf_origin → cert wildcard Cloudflare Origin CA, referenciado con `tls`
+      desde /certs/origin (Cloudflare termina el TLS público en su borde)
     """
     cfg = settings_service.get_network_config()
     panel_domain = cfg.get("panel_domain", "").strip()
@@ -40,14 +42,19 @@ def generate_caddyfile() -> str:
     email = cfg.get("caddy_email", "").strip()
     ssl_mode = cfg.get("tenants_ssl_mode", "caddy")
 
-    # tls con el wildcard de certbot solo si el cert ya existe (si no, Caddy no
-    # arrancaría apuntando a archivos inexistentes — fallback a HTTP-01).
+    # tls con el cert wildcard (certbot o cf_origin) solo si el cert ya existe (si
+    # no, Caddy no arrancaría apuntando a archivos inexistentes — fallback a HTTP-01).
     tls_line = ""
     if ssl_mode == "certbot":
         import certbot_service
         if certbot_service.cert_exists():
             fullchain, privkey = certbot_service.cert_paths_for_caddy()
             tls_line = f"    tls {fullchain} {privkey}"
+    elif ssl_mode == "cf_origin":
+        import cf_origin_service
+        if cf_origin_service.cert_exists():
+            cert, key = cf_origin_service.cert_paths_for_caddy()
+            tls_line = f"    tls {cert} {key}"
 
     lines: list[str] = [
         "# Caddyfile generado automáticamente por MonitorMaat",

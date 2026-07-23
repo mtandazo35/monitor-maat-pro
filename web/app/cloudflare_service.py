@@ -140,17 +140,32 @@ def delete_record(fqdn: str) -> dict:
     return {"deleted": fqdn, "count": len(recs)}
 
 
+def set_zone_ssl_mode(domain: str, value: str = "strict") -> dict:
+    """Pone el modo SSL/TLS de la zona (PATCH /zones/{id}/settings/ssl).
+    Usado por cf_origin para dejar la zona en 'strict' (Full strict). Requiere que
+    el token tenga permiso Zone Settings:Edit; si no lo tiene, devuelve el error
+    para que la UI sugiera hacerlo a mano. Best-effort, no fatal."""
+    cfg = settings_service.get_cloudflare_config()
+    token = cfg["token"]
+    if not token:
+        return {"skipped": "sin token"}
+    zone_id, _zone = _zone_id_for(domain, token)
+    _req("PATCH", f"/zones/{zone_id}/settings/ssl", token, {"value": value})
+    return {"ok": value}
+
+
 def sync_all(tenants_domain: str, ip: str, tenant_names: list) -> dict:
     """Asegura los registros DNS de los TENANTS según el modo configurado:
-    - cf_auto  → un registro A por tenant (`<nombre>.<dominio>`)
-    - certbot  → un único registro A wildcard (`*.<dominio>`)
-    - caddy    → no toca nada (DNS manual)
+    - cf_auto    → un registro A por tenant (`<nombre>.<dominio>`), nube gris
+    - cf_origin  → un registro A por tenant, nube NARANJA (proxied)
+    - certbot    → un único registro A wildcard (`*.<dominio>`)
+    - caddy      → no toca nada (DNS manual)
     El dominio del PANEL no se gestiona acá — va siempre por Caddy con su
     registro A manual (separación pedida a propósito).
     Best-effort: acumula errores por host y sigue."""
     mode = settings_service.get_tenants_ssl_mode()
     cfg = settings_service.get_cloudflare_config()
-    if mode not in ("cf_auto", "certbot") or not cfg["token"]:
+    if mode not in ("cf_auto", "certbot", "cf_origin") or not cfg["token"]:
         return {"skipped": "auto-DNS deshabilitado o sin token"}
     if not tenants_domain or not ip:
         return {"skipped": "falta tenants_domain o ip"}

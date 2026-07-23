@@ -79,7 +79,10 @@ def save_telegram_config(bot_token: Optional[str], admin_chat_id: str) -> None:
 #             Caddy emite cert por subdominio (HTTP-01). Requiere nube GRIS.
 #   certbot — SSL por API: cert wildcard real (*.dominio) vía Certbot DNS-01 con la
 #             API de Cloudflare; un solo registro wildcard; tolera nube naranja.
-TENANTS_SSL_MODES = ("caddy", "cf_auto", "certbot")
+#   cf_origin — Origin CA (Full strict): Cloudflare termina el TLS en su borde
+#             (Universal SSL); Caddy sirve un cert wildcard Cloudflare Origin CA
+#             (~15 años). Registros por-tenant en nube NARANJA (proxied). Usa el token.
+TENANTS_SSL_MODES = ("caddy", "cf_auto", "certbot", "cf_origin")
 
 _DOMAIN_RE_STR = r"^[a-z0-9.-]+\.[a-z]{2,}$"
 
@@ -150,8 +153,12 @@ def save_tenants_config(tenants_domain: str, ssl_mode: str) -> None:
 
     set_value("tenants_domain", td)
     set_value("tenants_ssl_mode", ssl_mode)
-    # Mantener la flag vieja coherente para código/instalaciones que la lean.
-    set_value("cf_dns_enabled", "1" if ssl_mode == "cf_auto" else "0")
+    # Mantener la flag vieja coherente para código/instalaciones que la lean
+    # (cf_auto y cf_origin crean un registro A por tenant vía API).
+    set_value("cf_dns_enabled", "1" if ssl_mode in ("cf_auto", "cf_origin") else "0")
+    # cf_origin exige nube naranja: forzar el flag para que el proxied quede en 1.
+    if ssl_mode == "cf_origin":
+        set_value("cf_proxied", "1")
 
 
 def get_billing_config() -> dict:
@@ -181,11 +188,14 @@ def get_cloudflare_config() -> dict:
     `enabled` = el modo de tenants gestiona registros por-tenant (cf_auto).
     El modo certbot también usa el token, pero solo para el wildcard + DNS-01."""
     tok = crypto.decrypt(get("cf_api_token", "")) or ""
+    mode = get_tenants_ssl_mode()
+    # cf_origin gestiona un registro A por tenant igual que cf_auto, pero SIEMPRE
+    # proxied (nube naranja): sin proxy no hay Universal SSL de Cloudflare.
     return {
-        "enabled": get_tenants_ssl_mode() == "cf_auto",
+        "enabled": mode in ("cf_auto", "cf_origin"),
         "token": tok,
         "has_token": bool(tok),
-        "proxied": get("cf_proxied", "0") == "1",  # nube naranja (default gris)
+        "proxied": get("cf_proxied", "0") == "1" or mode == "cf_origin",
     }
 
 

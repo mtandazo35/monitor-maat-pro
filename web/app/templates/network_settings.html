@@ -152,7 +152,27 @@
       </label>
     </div>
 
-    <label style="margin-top:14px">Token de API de Cloudflare (scoped) — para los modos 2 y 3
+    <div class="https-toggle mode-radio">
+      <label class="https-toggle-row">
+        <input type="radio" name="ssl_mode" value="cf_origin"
+               {% if cfg.tenants_ssl_mode == 'cf_origin' %}checked{% endif %}>
+        <span class="https-toggle-text">
+          <strong>4 · Cloudflare Origin CA (Full strict) — Cloudflare hace el SSL</strong>
+          <small class="muted">
+            El TLS público lo termina <strong>Cloudflare en su borde</strong> (Universal SSL,
+            gratis y auto-renovable): no dependés de Let's Encrypt ni de sus rate-limits.
+            Caddy sirve un cert <strong>Cloudflare Origin CA</strong> (wildcard, dura ~15 años,
+            lo generás 1 vez y lo pegás abajo). Registros por-tenant en nube
+            <strong>naranja</strong> — esconde la IP del VPS y suma WAF/DDoS. Usa el token de API
+            (para el DNS y para poner la zona en Full strict).
+            {% if origin_status.exists %}<br>✅ Cert de origen cargado (vence
+            {{ origin_status.not_after }}).{% endif %}
+          </small>
+        </span>
+      </label>
+    </div>
+
+    <label style="margin-top:14px">Token de API de Cloudflare (scoped) — para los modos 2, 3 y 4
       <input name="cf_api_token" type="password" autocomplete="off"
              placeholder="{% if cf.has_token %}•••••••• guardado — dejá vacío para no cambiar{% else %}pegá el token acá{% endif %}">
       <small class="muted">
@@ -171,9 +191,10 @@
         <span class="https-toggle-text">
           <strong>Proxied (nube naranja) — esconde la IP del VPS</strong>
           <small class="muted">
-            Solo compatible con el modo <strong>3 · SSL por API</strong> (el cert se valida
-            por DNS, no por HTTP). En el modo 2 dejalo desactivado (nube gris) o Caddy no
-            podrá emitir los certs.
+            Compatible con los modos <strong>3 · SSL por API</strong> y
+            <strong>4 · Origin CA</strong> (el cert no se valida por HTTP). El modo 4 lo
+            <strong>exige</strong> (se fuerza al guardar). En el modo 2 dejalo desactivado
+            (nube gris) o Caddy no podrá emitir los certs.
           </small>
         </span>
       </label>
@@ -184,6 +205,7 @@
       {% if cf.has_token %}<span class="role-pill role-admin">token guardado</span>{% endif %}
       {% if cfg.tenants_ssl_mode == 'caddy' %}<span class="role-pill role-system">modo: solo Caddy</span>
       {% elif cfg.tenants_ssl_mode == 'cf_auto' %}<span class="role-pill role-admin">modo: Cloudflare auto-DNS</span>
+      {% elif cfg.tenants_ssl_mode == 'cf_origin' %}<span class="role-pill role-admin">modo: Cloudflare Origin CA</span>
       {% else %}<span class="role-pill role-admin">modo: SSL por API (wildcard)</span>{% endif %}
     </div>
     <p class="muted small" style="margin-top:8px">
@@ -202,6 +224,67 @@
   </form>
   {% endif %}
 </section>
+
+{# ============================================================ #}
+{# 2b. CERT ORIGIN CA — solo modo 4 (cf_origin)                  #}
+{# ============================================================ #}
+{% if cfg.tenants_ssl_mode == 'cf_origin' %}
+<section class="card">
+  <h2 class="form-section">🔐 Certificado de origen (Cloudflare Origin CA)</h2>
+  {% if origin_status.exists %}
+  <p class="muted">
+    <span class="role-pill role-admin">cargado</span>
+    Vence <strong>{{ origin_status.not_after }}</strong>{% if origin_status.hostnames %} ·
+    cubre <code>{{ origin_status.hostnames }}</code>{% endif %}. Caddy lo sirve a Cloudflare;
+    volvé a pegar uno nuevo solo si lo regenerás.
+  </p>
+  {% else %}
+  <p class="muted">
+    <span class="role-pill role-system">pendiente</span>
+    Sin este cert, Caddy no puede servir HTTPS a Cloudflare (verás error 5xx del proxy).
+  </p>
+  {% endif %}
+
+  <details class="mk-details" {% if not origin_status.exists %}open{% endif %}>
+    <summary>📋 Cómo generarlo en Cloudflare (2 min, una sola vez)</summary>
+    <div style="padding:8px 0">
+      <ol class="muted" style="line-height:1.7">
+        <li>Cloudflare → tu dominio → <strong>SSL/TLS → Origin Server</strong> →
+          <strong>Create Certificate</strong>.</li>
+        <li>Dejá <em>Generate private key and CSR with Cloudflare</em>. En Hostnames poné
+          <code>{{ cfg.tenants_domain or 'midominio.com' }}</code> y
+          <code>*.{{ cfg.tenants_domain or 'midominio.com' }}</code>. Validez: 15 años. Create.</li>
+        <li>Copiá el <strong>Origin Certificate</strong> y la <strong>Private Key</strong>
+          (la key se muestra <u>una sola vez</u>) y pegalos abajo.</li>
+      </ol>
+      <p class="muted small">
+        Al guardar los dominios en modo 4, el panel deja la zona en <strong>Full (strict)</strong>
+        automáticamente (si el token tiene permiso; si no, ponela a mano en SSL/TLS → Overview).
+      </p>
+    </div>
+  </details>
+
+  <form method="post" action="/settings/network/origin-cert" style="margin-top:12px">
+    <label>Origin Certificate (PEM)
+      <textarea name="origin_cert" rows="6" spellcheck="false"
+                style="font-family:monospace;font-size:.78rem"
+                placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
+    </label>
+    <label>Private Key (PEM)
+      <textarea name="origin_key" rows="6" spellcheck="false"
+                style="font-family:monospace;font-size:.78rem"
+                placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"></textarea>
+      <small class="muted">
+        Se valida (que la key corresponda al cert) y se guarda en el VPS:
+        <code>cert.pem</code> (0644) y <code>key.pem</code> (0600). La key nunca se muestra de vuelta.
+      </small>
+    </label>
+    <div class="row" style="margin-top:12px">
+      <button type="submit" class="primary">💾 Guardar cert de origen y aplicar</button>
+    </div>
+  </form>
+</section>
+{% endif %}
 
 {# === Estado del setup === #}
 <section class="card">
@@ -234,6 +317,17 @@
       {% else %}
         <span class="role-pill role-system">pendiente</span>
         <span class="muted small">— se emite al guardar con token válido</span>
+      {% endif %}
+    </dd>
+    {% elif cfg.tenants_ssl_mode == 'cf_origin' %}
+    <dt>Cert de origen</dt>
+    <dd>
+      {% if origin_status.exists %}
+        <span class="role-pill role-admin">cargado — vence {{ origin_status.not_after }}</span>
+        <span class="muted small">— Cloudflare hace el SSL público</span>
+      {% else %}
+        <span class="role-pill role-system">pendiente</span>
+        <span class="muted small">— pegá el Origin CA arriba</span>
       {% endif %}
     </dd>
     {% endif %}
@@ -279,6 +373,13 @@
           <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
           <td><span class="role-pill role-admin">automático (por tenant)</span></td>
         </tr>
+        {% elif cfg.tenants_ssl_mode == 'cf_origin' %}
+        <tr>
+          <td><code>A</code></td>
+          <td><code>&lt;tenant&gt;.{{ cfg.tenants_domain }}</code></td>
+          <td><code>{{ public_ip or 'IP_DEL_VPS' }}</code></td>
+          <td><span class="role-pill role-admin">automático (por tenant) · 🟠 proxied</span></td>
+        </tr>
         {% else %}
         <tr>
           <td><code>A</code></td>
@@ -291,11 +392,11 @@
       </tbody>
     </table>
   </div>
-  {% if cfg.tenants_ssl_mode != 'certbot' %}
+  {% if cfg.tenants_ssl_mode == 'cf_auto' %}
   <p class="muted small" style="margin-top:8px">
-    ⚠ Con Cloudflare, los registros de tenants van en <strong>nube gris</strong> (DNS only)
+    ⚠ En este modo los registros de tenants van en <strong>nube gris</strong> (DNS only)
     para que Caddy pueda emitir los certs. Si necesitás nube naranja, usá el modo
-    <strong>3 · SSL por API</strong>.
+    <strong>3 · SSL por API</strong> o <strong>4 · Origin CA</strong>.
   </p>
   {% endif %}
 </section>
