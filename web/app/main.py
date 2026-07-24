@@ -1067,6 +1067,7 @@ def user_new_form(request: Request, user: dict = Depends(current_admin)):
             "request": request, "user": user,
             "edit": None, "flash": _pop_flash(request),
             "assignable_tenants": svc.list_assignable_tenants(),
+            "plans": billing.list_plans(active_only=True),
         },
     )
 
@@ -1084,18 +1085,10 @@ def user_new_submit(
     phone: str = Form(""),
     email: str = Form(""),
     telegram_chat_id: str = Form(""),
-    tenant_quota: str = Form(""),
+    plan_id: str = Form(""),
     assign_tenants: list[str] = Form([]),
     user: dict = Depends(current_admin),
 ):
-    quota = None
-    if tenant_quota.strip():
-        try:
-            quota = int(tenant_quota)
-        except ValueError:
-            _flash(request, "Quota debe ser un número.", "error")
-            return RedirectResponse("/users/new", status_code=303)
-
     try:
         new_user, plain_pwd, autogen = usr.create_user(
             username.strip().lower(),
@@ -1108,11 +1101,19 @@ def user_new_submit(
             phone=phone,
             email=email,
             telegram_chat_id=telegram_chat_id,
-            tenant_quota=quota,
+            tenant_quota=None,  # la quota la define el plan asignado (abajo)
         )
     except usr.UserError as e:
         _flash(request, str(e), "error")
         return RedirectResponse("/users/new", status_code=303)
+
+    # Asignar plan (define quota de tenants + precio + días). Solo rol cliente.
+    if new_user["role"] == "user" and plan_id.strip():
+        try:
+            billing.assign_plan(new_user["id"], int(plan_id))
+            new_user = usr.get_user(new_user["id"])  # refrescar con la quota del plan
+        except (billing.BillingError, ValueError) as e:
+            _flash(request, f"Usuario creado, pero el plan no se asignó: {e}", "info")
 
     events.log(
         "user_created", "user",
@@ -1187,11 +1188,18 @@ def user_edit_form(request: Request, user_id: int, user: dict = Depends(current_
     edit = usr.get_user(user_id)
     if not edit:
         raise HTTPException(404)
+    plans = billing.list_plans(active_only=True)
+    # Incluir el plan ya asignado aunque esté inactivo, para no desasignarlo sin querer.
+    if edit.get("assigned_plan_id") and not any(p["id"] == edit["assigned_plan_id"] for p in plans):
+        cur = billing.get_plan(edit["assigned_plan_id"])
+        if cur:
+            plans = plans + [cur]
     return templates.TemplateResponse(
         "user_form.html",
         {
             "request": request, "user": user,
             "edit": edit, "flash": _pop_flash(request),
+            "plans": plans,
         },
     )
 
@@ -1208,19 +1216,13 @@ def user_edit_submit(
     phone: str = Form(""),
     email: str = Form(""),
     telegram_chat_id: str = Form(""),
-    tenant_quota: str = Form(""),
+    plan_id: str = Form(""),
     new_password: str = Form(""),
     user: dict = Depends(current_admin),
 ):
-    quota = None
-    if tenant_quota.strip():
-        try:
-            quota = int(tenant_quota)
-        except ValueError:
-            _flash(request, "Quota debe ser un número.", "error")
-            return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
     target = usr.get_user(user_id)
     try:
+        # La quota la define el plan (no se pasa tenant_quota → update_user no la toca).
         usr.update_user(
             user_id,
             company_name=company_name,
@@ -1230,10 +1232,17 @@ def user_edit_submit(
             phone=phone,
             email=email,
             telegram_chat_id=telegram_chat_id,
-            tenant_quota=quota,
             role=role,
             new_password=new_password or None,
         )
+        # Asignar/actualizar plan (define quota+precio+días). Solo rol cliente; para
+        # admin no aplica (ve todo). '— sin plan —' desasigna y deja quota en 0.
+        if role == "user":
+            try:
+                billing.assign_plan(user_id, int(plan_id) if plan_id.strip() else None)
+            except (billing.BillingError, ValueError) as e:
+                _flash(request, f"Usuario actualizado, pero el plan no se asignó: {e}", "info")
+                return RedirectResponse("/users", status_code=303)
         events.log("user_updated", "user", actor=user, target_user=target, ip=_client_ip(request))
         _flash(request, "Usuario actualizado.", "success")
         return RedirectResponse("/users", status_code=303)
@@ -1720,6 +1729,7 @@ def plans_create(
     currency: str = Form("USD"),
     days: str = Form(...),
     is_active: str = Form(""),
+    tenant_quota: str = Form(""),
     user: dict = Depends(current_admin),
 ):
     try:
@@ -1728,6 +1738,7 @@ def plans_create(
             name=name, description=description,
             price=float(price.replace(",", ".")), days=int(days),
             currency=currency, is_active=bool(is_active),
+            tenant_quota=(int(tenant_quota) if tenant_quota.strip() else None),
         )
         events.log("plan_created", "settings", actor=user,
                    details=f"plan={plan['name']} ${plan['price']}", ip=_client_ip(request))
@@ -1748,6 +1759,7 @@ def plans_update(
     days: str = Form(...),
     is_active: str = Form(""),
     sort_order: str = Form(""),
+    tenant_quota: str = Form(""),
     user: dict = Depends(current_admin),
 ):
     try:
@@ -1758,6 +1770,8 @@ def plans_update(
             "price": float(price.replace(",", ".")),
             "days": int(days),
         }
+        if tenant_quota.strip():
+            fields["tenant_quota"] = int(tenant_quota)
         if assoc["total"] == 0:
             # Plan no está en uso: admitir cambios estructurales también
             fields["currency"] = currency

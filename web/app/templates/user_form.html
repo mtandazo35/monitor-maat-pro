@@ -42,14 +42,24 @@
       </select>
     </label>
 
-    <label v-show="role !== 'admin'">Quota de tenants
-      <input type="number" name="tenant_quota" min="0"
-             value="{{ edit.tenant_quota if edit and edit.tenant_quota else '' }}"
-             placeholder="ej: 5">
-      <small class="muted">Cuántos tenants puede crear este cliente. Vacío o 0 = ninguno.</small>
+    <label v-show="role !== 'admin'">Plan
+      <select name="plan_id">
+        <option value="">— sin plan —</option>
+        {% for pl in plans %}
+        <option value="{{ pl.id }}"
+                {% if edit and edit.assigned_plan_id == pl.id %}selected{% endif %}>
+          {{ pl.name }} — {{ pl.currency }} {{ '%.2f'|format(pl.price) }} / {{ pl.days }}d ·
+          {{ pl.tenant_quota if pl.tenant_quota is not none else 0 }} tenant(s)
+        </option>
+        {% endfor %}
+      </select>
+      <small class="muted">
+        El plan define la <strong>cantidad de tenants</strong> (quota), el precio y los días de
+        cobertura del cliente. Gestioná los planes en <a href="/settings/plans">Planes</a>.
+      </small>
     </label>
     <p v-show="role === 'admin'" class="form-hint">
-      ℹ El rol <strong>admin</strong> ignora la quota de tenants.
+      ℹ El rol <strong>admin</strong> ve todos los tenants e ignora plan/quota.
     </p>
 
     {% if not edit and assignable_tenants %}

@@ -257,6 +257,7 @@ def create_plan(
     currency: str = "USD",
     is_active: bool = True,
     sort_order: int = 0,
+    tenant_quota: Optional[int] = None,
 ) -> dict:
     name = (name or "").strip()
     if not name:
@@ -265,6 +266,8 @@ def create_plan(
         raise BillingError("El precio no puede ser negativo.")
     if days <= 0:
         raise BillingError("Los días deben ser mayores a 0.")
+    if tenant_quota is not None and tenant_quota < 0:
+        raise BillingError("La cantidad de tenants no puede ser negativa.")
     with connect() as con:
         # Siempre apendear al final: tomamos max(sort_order)+1.
         # El campo sort_order del form se ignora; renumeramos al final 1..N.
@@ -273,11 +276,12 @@ def create_plan(
         ).fetchone()["m"]
         cur = con.execute(
             """INSERT INTO plans (name, description, price, currency, days,
-                                  is_active, sort_order, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  is_active, sort_order, tenant_quota, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (name, (description or "").strip() or None, float(price),
              (currency or "USD").strip().upper(), int(days),
-             1 if is_active else 0, int(max_so) + 1, now_iso()),
+             1 if is_active else 0, int(max_so) + 1,
+             (int(tenant_quota) if tenant_quota is not None else None), now_iso()),
         )
         pid = cur.lastrowid
         _renumber_plans(con)
@@ -294,9 +298,9 @@ def update_plan(plan_id: int, **fields) -> dict:
     # is_active, sort_order) queda bloqueado.
     assoc = count_plan_associations(plan_id)
     if assoc["total"] > 0:
-        allowed = {"name", "description", "price", "days"}
+        allowed = {"name", "description", "price", "days", "tenant_quota"}
     else:
-        allowed = {"name", "description", "price", "currency", "days", "is_active", "sort_order"}
+        allowed = {"name", "description", "price", "currency", "days", "is_active", "sort_order", "tenant_quota"}
     sets = []
     params: list = []
     for k, v in fields.items():
@@ -320,6 +324,10 @@ def update_plan(plan_id: int, **fields) -> dict:
             v = 1 if v else 0
         elif k == "sort_order":
             v = int(v)
+        elif k == "tenant_quota":
+            v = int(v)
+            if v < 0:
+                raise BillingError("La cantidad de tenants no puede ser negativa.")
         elif k == "description":
             v = (v or "").strip() or None
         sets.append(f"{k} = ?")
@@ -359,18 +367,29 @@ def delete_plan(plan_id: int) -> None:
 
 def assign_plan(user_id: int, plan_id: Optional[int]) -> None:
     """Asigna (o desasigna si plan_id=None) un plan al usuario.
-    El plan asignado es el que el cliente vera y podra pagar en /me/billing."""
+    El plan asignado es el que el cliente vera y podra pagar en /me/billing.
+    El plan define además la cantidad de tenants (quota): al asignarlo, se copia
+    su tenant_quota al usuario, que es lo que usa create_tenant para el límite."""
+    quota = None
     if plan_id is not None:
         plan = get_plan(plan_id)
         if not plan:
             raise BillingError("Plan no encontrado.")
         if not plan["is_active"]:
             raise BillingError(f"El plan '{plan['name']}' está desactivado.")
+        quota = plan.get("tenant_quota")
     with connect() as con:
-        con.execute(
-            "UPDATE users SET assigned_plan_id = ? WHERE id = ?",
-            (plan_id, user_id),
-        )
+        if plan_id is not None:
+            con.execute(
+                "UPDATE users SET assigned_plan_id = ?, tenant_quota = ? WHERE id = ?",
+                (plan_id, quota, user_id),
+            )
+        else:
+            # Desasignar: quita el plan y deja la quota en 0 (no puede crear tenants).
+            con.execute(
+                "UPDATE users SET assigned_plan_id = NULL, tenant_quota = 0 WHERE id = ?",
+                (user_id,),
+            )
 
 
 def get_assigned_plan(user: dict) -> Optional[dict]:

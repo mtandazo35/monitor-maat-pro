@@ -44,6 +44,10 @@
       <input name="days" type="number" min="1" required value="30">
       <small class="muted">Cuántos días suma al <code>paid_until</code> del cliente cuando paga este plan.</small>
     </label>
+    <label>Cantidad de tenants
+      <input name="tenant_quota" type="number" min="0" placeholder="ej: 5">
+      <small class="muted">Cuántos tenants incluye el plan (la quota del cliente). Vacío o 0 = ninguno. Al asignar el plan a un usuario, esta cantidad se le aplica.</small>
+    </label>
     <p class="muted small" style="margin:6px 0 0">
       📌 El nuevo plan se agrega al final del listado. Podés reordenarlo después editando el campo "Orden" (mientras no esté asignado a clientes).
     </p>
@@ -81,7 +85,7 @@
         <thead>
           <tr>
             <th>Orden</th><th>Nombre</th><th>Descripción</th>
-            <th>Precio</th><th>Días</th><th>Activo</th><th>Acciones</th>
+            <th>Precio</th><th>Días</th><th>Tenants</th><th>Activo</th><th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -119,6 +123,7 @@
                 </div>
               </td>
               <td style="vertical-align:middle"><input name="days" type="number" min="1" value="{{ p.days }}" required style="width:4.5em"></td>
+              <td style="vertical-align:middle"><input name="tenant_quota" type="number" min="0" value="{{ p.tenant_quota if p.tenant_quota is not none else '' }}" placeholder="0" style="width:4.5em"></td>
               <td style="vertical-align:middle;text-align:center">
                 {% if p.locked %}
                   <span class="status status-{{ 'ok' if p.is_active else 'down' }}" title="No se puede modificar: plan en uso">
@@ -199,6 +204,9 @@
           <div class="form-grid-2">
             <label>Días
               <input name="days" type="number" min="1" value="{{ p.days }}" required>
+            </label>
+            <label>Tenants
+              <input name="tenant_quota" type="number" min="0" value="{{ p.tenant_quota if p.tenant_quota is not none else '' }}" placeholder="0">
             </label>
             <label>Orden
               {% if p.locked %}

@@ -125,6 +125,7 @@ def init_db() -> None:
                 days INTEGER NOT NULL DEFAULT 30,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 sort_order INTEGER NOT NULL DEFAULT 0,
+                tenant_quota INTEGER,
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_plans_active ON plans(is_active, sort_order);
@@ -225,6 +226,11 @@ def init_db() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_payments_provider_tx ON payments(provider_tx_id)")
         except Exception:
             pass
+
+        # Migración plans: cantidad de tenants incluida en el plan (quota del cliente)
+        plcols = [r[1] for r in con.execute("PRAGMA table_info(plans)").fetchall()]
+        if "tenant_quota" not in plcols:
+            con.execute("ALTER TABLE plans ADD COLUMN tenant_quota INTEGER")
 
         # Unicidad de IP VPN por tenant: evita que dos usuarios VPN del mismo tenant
         # queden con la misma IP (ruteo roto). Si una DB vieja ya tiene duplicados el
