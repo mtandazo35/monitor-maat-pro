@@ -168,6 +168,25 @@ def count_tenants(owner_id: Optional[int] = None, search: Optional[str] = None) 
         return con.execute(sql, params).fetchone()["c"]
 
 
+def set_owner(name: str, owner_id: Optional[int]) -> None:
+    """Reasigna el dueño de un tenant (para pasar a un cliente los que creó un admin)."""
+    with connect() as con:
+        con.execute("UPDATE tenants SET owner_id = ? WHERE name = ?", (owner_id, name))
+
+
+def list_assignable_tenants() -> list[dict]:
+    """Tenants que se pueden asignar a un cliente nuevo: sin dueño, o cuyo dueño es
+    admin (los que un admin creó/administra). Excluye los que ya son de un cliente."""
+    with connect() as con:
+        rows = con.execute(
+            """SELECT t.name, t.slot, u.username AS owner_username
+               FROM tenants t LEFT JOIN users u ON u.id = t.owner_id
+               WHERE t.owner_id IS NULL OR u.role = 'admin'
+               ORDER BY t.slot"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_tenant(name: str) -> Optional[dict]:
     with connect() as con:
         row = con.execute(

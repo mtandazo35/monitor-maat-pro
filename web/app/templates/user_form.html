@@ -52,6 +52,26 @@
       ℹ El rol <strong>admin</strong> ignora la quota de tenants.
     </p>
 
+    {% if not edit and assignable_tenants %}
+    <div v-show="role !== 'admin'" style="margin:10px 0 4px">
+      <label style="margin-bottom:4px">Asignar tenants existentes (opcional)</label>
+      <small class="muted" style="display:block; margin-bottom:8px">
+        Tenants que creó un admin y este cliente pasará a gestionar. Al crear el usuario se le
+        <strong>transfiere la propiedad</strong> de los que marques.
+      </small>
+      <div style="max-height:190px; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:8px 10px">
+        {% for t in assignable_tenants %}
+        <label style="display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; margin:0">
+          <input type="checkbox" name="assign_tenants" value="{{ t.name }}"
+                 style="width:16px; height:16px; margin:0; flex-shrink:0">
+          <code>{{ t.name }}</code>
+          <span class="muted small">— dueño actual: {{ t.owner_username or 'sin dueño' }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% if not edit %}
     <label>Password (opcional)
       <span class="pwd-wrap">

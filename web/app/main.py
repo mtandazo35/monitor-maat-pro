@@ -1066,6 +1066,7 @@ def user_new_form(request: Request, user: dict = Depends(current_admin)):
         {
             "request": request, "user": user,
             "edit": None, "flash": _pop_flash(request),
+            "assignable_tenants": svc.list_assignable_tenants(),
         },
     )
 
@@ -1084,6 +1085,7 @@ def user_new_submit(
     email: str = Form(""),
     telegram_chat_id: str = Form(""),
     tenant_quota: str = Form(""),
+    assign_tenants: list[str] = Form([]),
     user: dict = Depends(current_admin),
 ):
     quota = None
@@ -1119,6 +1121,21 @@ def user_new_submit(
         ip=_client_ip(request),
     )
 
+    # Asignar tenants ya existentes al cliente nuevo (los que creó un admin y el
+    # cliente pasa a gestionar). Solo para rol 'user' y solo tenants asignables
+    # (sin dueño o de un admin), validado en servidor por seguridad.
+    assigned = []
+    if new_user["role"] == "user" and assign_tenants:
+        allowed = {t["name"] for t in svc.list_assignable_tenants()}
+        for tname in assign_tenants:
+            tname = (tname or "").strip()
+            if tname in allowed:
+                svc.set_owner(tname, new_user["id"])
+                assigned.append(tname)
+        if assigned:
+            events.log("tenants_assigned", "user", actor=user, target_user=new_user,
+                       details=f"tenants={','.join(assigned)}", ip=_client_ip(request))
+
     # Notificaciones Telegram
     notify.send_admin(
         f"👤 <b>Usuario nuevo</b>\nLogin: <code>{new_user['username']}</code>\n"
@@ -1137,6 +1154,8 @@ def user_new_submit(
         )
 
     msg_parts = [f"Usuario '{new_user['username']}' creado."]
+    if assigned:
+        msg_parts.append(f"{len(assigned)} tenant(s) asignado(s): {', '.join(assigned)}.")
 
     if autogen:
         if new_user.get("email") and mail.is_configured():
