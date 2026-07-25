@@ -99,7 +99,9 @@ app.add_middleware(
     # algunos browsers omitían, dejando al user en loop de login).
     # Igual de seguro contra CSRF: POST cross-site no envía cookie con lax.
     same_site="lax",
-    max_age=60 * 60 * 24 * 7,  # 7 días
+    # La cookie caduca por inactividad; el corte absoluto lo aplica auth.session_user
+    # (login_at). Ver SESSION_MAX_HOURS / SESSION_IDLE_MINUTES.
+    max_age=config.SESSION_IDLE_MINUTES * 60,
 )
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
@@ -293,7 +295,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
             _flash(request, "Tu cuenta está desactivada. Contactá al administrador.", "error")
             return RedirectResponse("/login", status_code=303)
         security.reset_user_attempts(uname)
-        request.session["user_id"] = user["id"]
+        auth.start_session(request, user["id"])
         events.log("login_success", "auth", actor=user, ip=ip)
         return RedirectResponse("/", status_code=303)
 
