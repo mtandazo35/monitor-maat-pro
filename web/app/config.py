@@ -19,8 +19,8 @@ SESSION_SECRET = os.environ.get("SESSION_SECRET", "change-me-please-32chars-mini
 # que el corte real lo dan estos límites server-side, chequeados en cada request:
 #  - SESSION_MAX_HOURS: vida ABSOLUTA desde el login (vence sí o sí, aunque esté activo).
 #  - SESSION_IDLE_MINUTES: corte por inactividad (sin requests en ese lapso).
-SESSION_MAX_HOURS = int(os.environ.get("SESSION_MAX_HOURS", "12") or 12)
-SESSION_IDLE_MINUTES = int(os.environ.get("SESSION_IDLE_MINUTES", "480") or 480)
+SESSION_MAX_HOURS = int(os.environ.get("SESSION_MAX_HOURS", "1") or 1)
+SESSION_IDLE_MINUTES = int(os.environ.get("SESSION_IDLE_MINUTES", "60") or 60)
 
 # Interfaz donde se publica el puerto Kuma de cada tenant. Default 0.0.0.0 (compat);
 # 127.0.0.1 lo cierra al reverse proxy local (evita exponer el wizard sin-auth).
