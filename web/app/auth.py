@@ -27,7 +27,7 @@ def session_user(request: Request) -> Optional[dict]:
     now = int(time.time())
     login_at = request.session.get("login_at")
     last_seen = request.session.get("last_seen")
-    max_abs = config.SESSION_MAX_HOURS * 3600
+    max_abs = config.SESSION_MAX_HOURS * 3600      # 0 = sin tope absoluto (deslizante)
     max_idle = config.SESSION_IDLE_MINUTES * 60
 
     # Sesiones viejas sin timestamps (pre-feature): sembramos ahora para no expulsar
@@ -37,11 +37,11 @@ def session_user(request: Request) -> Optional[dict]:
         request.session["last_seen"] = now
         login_at = last_seen = now
 
-    # Tope absoluto: vence sí o sí pasadas SESSION_MAX_HOURS desde el login.
-    if now - login_at > max_abs:
+    # Tope absoluto opcional (deshabilitado si SESSION_MAX_HOURS <= 0).
+    if max_abs > 0 and now - login_at > max_abs:
         request.session.clear()
         return None
-    # Inactividad: sin requests por más de SESSION_IDLE_MINUTES.
+    # Inactividad DESLIZANTE: se cierra si no hubo actividad real en SESSION_IDLE_MINUTES.
     if now - last_seen > max_idle:
         request.session.clear()
         return None
@@ -51,7 +51,12 @@ def session_user(request: Request) -> Optional[dict]:
         request.session.clear()
         return None
 
-    request.session["last_seen"] = now  # refrescar actividad
+    # La sesión se renueva SOLO con actividad real del humano. Las llamadas de fondo
+    # del panel (polling: GET /api/*) NO cuentan, para que una pestaña abierta sin
+    # nadie usándola termine cerrando por inactividad.
+    is_background_poll = request.method == "GET" and request.url.path.startswith("/api/")
+    if not is_background_poll:
+        request.session["last_seen"] = now
     return user
 
 

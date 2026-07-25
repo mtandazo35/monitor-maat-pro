@@ -15,11 +15,13 @@ ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "change-me-please-32chars-minimum")
 
-# Vencimiento de sesión. La cookie es rodante (el polling del panel la refresca), así
-# que el corte real lo dan estos límites server-side, chequeados en cada request:
-#  - SESSION_MAX_HOURS: vida ABSOLUTA desde el login (vence sí o sí, aunque esté activo).
-#  - SESSION_IDLE_MINUTES: corte por inactividad (sin requests en ese lapso).
-SESSION_MAX_HOURS = int(os.environ.get("SESSION_MAX_HOURS", "1") or 1)
+# Vencimiento de sesión (chequeado server-side en cada request):
+#  - SESSION_IDLE_MINUTES: inactividad DESLIZANTE. Con actividad real del humano la
+#    sesión se renueva sola; el polling de fondo (GET /api/*) NO cuenta, así una
+#    pestaña abierta sin uso termina cerrando. Default 60 min.
+#  - SESSION_MAX_HOURS: tope ABSOLUTO opcional desde el login (0 = sin tope; la sesión
+#    de un usuario activo se renueva indefinidamente). Default 0.
+SESSION_MAX_HOURS = int(os.environ.get("SESSION_MAX_HOURS", "0") or 0)
 SESSION_IDLE_MINUTES = int(os.environ.get("SESSION_IDLE_MINUTES", "60") or 60)
 
 # Interfaz donde se publica el puerto Kuma de cada tenant. Default 0.0.0.0 (compat);
