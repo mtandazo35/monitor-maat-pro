@@ -25,6 +25,8 @@ def init_db() -> None:
                 telegram_bot_token TEXT,
                 telegram_off TEXT,
                 tenant_quota INTEGER,
+                reseller_id INTEGER REFERENCES users(id),
+                client_price REAL,
                 must_change_password INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
@@ -206,6 +208,12 @@ def init_db() -> None:
             con.execute("ALTER TABLE users ADD COLUMN assigned_plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL")
         if "is_active" not in ucols2:
             con.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+        # Migración revendedores: jerarquía (reseller_id = revendedor dueño del cliente)
+        # y precio que el revendedor le cobra a ese cliente (markup sobre el plan).
+        if "reseller_id" not in ucols2:
+            con.execute("ALTER TABLE users ADD COLUMN reseller_id INTEGER REFERENCES users(id)")
+        if "client_price" not in ucols2:
+            con.execute("ALTER TABLE users ADD COLUMN client_price REAL")
 
         # Migración payments: columnas para tracking de provider (PayPhone)
         pcols = [r[1] for r in con.execute("PRAGMA table_info(payments)").fetchall()]

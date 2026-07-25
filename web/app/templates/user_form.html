@@ -35,14 +35,17 @@
     </label>
     {% endif %}
 
+    {% if actor_is_admin %}
     <label>Rol
       <select name="role" v-model="role">
         <option value="user">Cliente (user)</option>
+        <option value="reseller">Revendedor</option>
         <option value="admin">Administrador (admin)</option>
       </select>
     </label>
+    {% endif %}
 
-    <label v-show="role !== 'admin'">Plan
+    <label v-show="role === 'user'">Plan
       <select name="plan_id">
         <option value="">— sin plan —</option>
         {% for pl in plans %}
@@ -54,12 +57,41 @@
         {% endfor %}
       </select>
       <small class="muted">
-        El plan define la <strong>cantidad de tenants</strong> (quota), el precio y los días de
-        cobertura del cliente. Gestioná los planes en <a href="/settings/plans">Planes</a>.
+        El plan define la <strong>cantidad de tenants</strong> (quota), el precio base y los días
+        de cobertura. Gestioná los planes en <a href="/settings/plans">Planes</a>.
       </small>
     </label>
+
+    {% if actor_is_admin and resellers %}
+    <label v-show="role === 'user'">Revendedor (opcional)
+      <select name="reseller_id">
+        <option value="">— sin revendedor (cliente directo) —</option>
+        {% for r in resellers %}
+        <option value="{{ r.id }}" {% if edit and edit.reseller_id == r.id %}selected{% endif %}>
+          {{ r.username }}{% if r.company_name %} ({{ r.company_name }}){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <small class="muted">Si a este cliente lo gestiona un revendedor, asignalo acá.</small>
+    </label>
+    {% endif %}
+
+    <label v-show="role === 'user'">Precio al cliente (opcional)
+      <input type="number" name="client_price" min="0" step="0.01"
+             value="{{ edit.client_price if edit and edit.client_price is not none else '' }}"
+             placeholder="ej: 35.00">
+      <small class="muted">
+        Precio final que paga el cliente{% if actor_is_admin %} (si lo gestiona un revendedor, es su precio de venta){% endif %}.
+        Vacío = usa el precio del plan.
+      </small>
+    </label>
+
     <p v-show="role === 'admin'" class="form-hint">
       ℹ El rol <strong>admin</strong> ve todos los tenants e ignora plan/quota.
+    </p>
+    <p v-show="role === 'reseller'" class="form-hint">
+      ℹ El <strong>revendedor</strong> gestiona solo sus propios clientes (crearlos, asignarles
+      plan y precio, y sus tenants). No ve a los clientes de otros.
     </p>
 
     {% if not edit and assignable_tenants %}

@@ -1,6 +1,7 @@
 import subprocess
 import threading
 import time
+from typing import Optional
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -210,11 +211,45 @@ def current_admin(request: Request) -> dict:
     return user
 
 
+def current_manager(request: Request) -> dict:
+    """Admin o revendedor: pueden gestionar usuarios/tenants/billing (el revendedor
+    SOLO sobre sus propios clientes; el scoping se aplica en cada ruta)."""
+    user = current_user(request)
+    if user["role"] not in ("admin", "reseller"):
+        raise Forbidden()
+    return user
+
+
+def _require_managed_user(actor: dict, target: dict) -> None:
+    """El actor puede gestionar a `target`: admin siempre; revendedor solo si target
+    es un cliente suyo (target.reseller_id == actor.id)."""
+    if actor["role"] == "admin":
+        return
+    if actor["role"] == "reseller" and target and target.get("reseller_id") == actor["id"]:
+        return
+    raise Forbidden()
+
+
+def _client_ids_of(actor: dict) -> Optional[list]:
+    """IDs de los clientes que ve el actor para scoping de tenants/billing. None =
+    admin (ve todos). Para revendedor: los ids de sus clientes."""
+    if actor["role"] == "admin":
+        return None
+    return [u["id"] for u in usr.list_users(reseller_id=actor["id"])]
+
+
 def _require_tenant_access(user: dict, tenant: dict) -> None:
     if user["role"] == "admin":
         return
-    if tenant.get("owner_id") != user["id"]:
-        raise Forbidden()
+    owner_id = tenant.get("owner_id")
+    if owner_id == user["id"]:
+        return
+    # Revendedor: puede acceder a los tenants de SUS clientes.
+    if user["role"] == "reseller":
+        owner = usr.get_user(owner_id) if owner_id else None
+        if owner and owner.get("reseller_id") == user["id"]:
+            return
+    raise Forbidden()
 
 
 # -------- AUTH --------
@@ -783,7 +818,7 @@ _USER_PUBLIC_FIELDS = (
     "id", "username", "first_name", "last_name", "company_name",
     "email", "phone", "phone_cc", "role", "tenant_count", "tenant_quota",
     "created_at", "must_change_password", "paid_until", "assigned_plan_id",
-    "is_active",
+    "is_active", "reseller_id", "client_price",
 )
 
 
@@ -797,11 +832,17 @@ def _user_public(u: dict) -> dict:
          "currency": plan["currency"], "days": plan["days"]}
         if plan else None
     )
+    # Nombre del revendedor dueño (para la UI de admin)
+    if u.get("reseller_id"):
+        r = usr.get_user(u["reseller_id"])
+        out["reseller_username"] = r["username"] if r else None
+    else:
+        out["reseller_username"] = None
     return out
 
 
 @app.get("/users", response_class=HTMLResponse)
-def users_list(request: Request, q: str = "", user: dict = Depends(current_admin)):
+def users_list(request: Request, q: str = "", user: dict = Depends(current_manager)):
     return templates.TemplateResponse(
         "users.html",
         {
@@ -814,17 +855,20 @@ def users_list(request: Request, q: str = "", user: dict = Depends(current_admin
 
 
 @app.get("/api/users")
-def api_users(q: str = "", user: dict = Depends(current_admin)):
-    rows = usr.list_users(search=q or None)
+def api_users(q: str = "", user: dict = Depends(current_manager)):
+    # Revendedor: solo sus clientes. Admin: todos.
+    rid = None if user["role"] == "admin" else user["id"]
+    rows = usr.list_users(search=q or None, reseller_id=rid)
     safe = [_user_public(r) for r in rows]
     return JSONResponse({"users": safe, "q": q}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/users/{user_id}")
-def api_user_detail(user_id: int, user: dict = Depends(current_admin)):
+def api_user_detail(user_id: int, user: dict = Depends(current_manager)):
     target = usr.get_user(user_id)
     if not target:
         raise HTTPException(404)
+    _require_managed_user(user, target)
     target["tenant_count"] = usr.count_user_tenants(user_id)
     return JSONResponse(
         {"user": _user_public(target), "payments": billing.list_payments(user_id)},
@@ -1060,14 +1104,19 @@ def user_quick_extend(
 
 
 @app.get("/users/new", response_class=HTMLResponse)
-def user_new_form(request: Request, user: dict = Depends(current_admin)):
+def user_new_form(request: Request, user: dict = Depends(current_manager)):
+    is_admin = user["role"] == "admin"
     return templates.TemplateResponse(
         "user_form.html",
         {
             "request": request, "user": user,
             "edit": None, "flash": _pop_flash(request),
-            "assignable_tenants": svc.list_assignable_tenants(),
+            # El admin puede asignar tenants del pool y elegir revendedor; el
+            # revendedor crea clientes suyos (sin esas opciones en la Fase 1).
+            "assignable_tenants": svc.list_assignable_tenants() if is_admin else [],
             "plans": billing.list_plans(active_only=True),
+            "resellers": [u for u in usr.list_users() if u["role"] == "reseller"] if is_admin else [],
+            "actor_is_admin": is_admin,
         },
     )
 
@@ -1086,9 +1135,26 @@ def user_new_submit(
     email: str = Form(""),
     telegram_chat_id: str = Form(""),
     plan_id: str = Form(""),
+    reseller_id: str = Form(""),
+    client_price: str = Form(""),
     assign_tenants: list[str] = Form([]),
-    user: dict = Depends(current_admin),
+    user: dict = Depends(current_manager),
 ):
+    is_admin = user["role"] == "admin"
+    # Un revendedor solo crea CLIENTES suyos: rol forzado 'user', reseller_id = él.
+    if not is_admin:
+        role = "user"
+        rid = user["id"]
+    else:
+        # Admin: si crea un cliente, puede asignarlo a un revendedor.
+        rid = int(reseller_id) if (role == "user" and reseller_id.strip()) else None
+    price = None
+    if role == "user" and client_price.strip():
+        try:
+            price = float(client_price.replace(",", "."))
+        except ValueError:
+            _flash(request, "El precio al cliente debe ser un número.", "error")
+            return RedirectResponse("/users/new", status_code=303)
     try:
         new_user, plain_pwd, autogen = usr.create_user(
             username.strip().lower(),
@@ -1102,6 +1168,8 @@ def user_new_submit(
             email=email,
             telegram_chat_id=telegram_chat_id,
             tenant_quota=None,  # la quota la define el plan asignado (abajo)
+            reseller_id=rid,
+            client_price=price,
         )
     except usr.UserError as e:
         _flash(request, str(e), "error")
@@ -1126,7 +1194,7 @@ def user_new_submit(
     # cliente pasa a gestionar). Solo para rol 'user' y solo tenants asignables
     # (sin dueño o de un admin), validado en servidor por seguridad.
     assigned = []
-    if new_user["role"] == "user" and assign_tenants:
+    if is_admin and new_user["role"] == "user" and assign_tenants:
         allowed = {t["name"] for t in svc.list_assignable_tenants()}
         for tname in assign_tenants:
             tname = (tname or "").strip()
@@ -1184,10 +1252,12 @@ def user_new_submit(
 
 
 @app.get("/users/{user_id}/edit", response_class=HTMLResponse)
-def user_edit_form(request: Request, user_id: int, user: dict = Depends(current_admin)):
+def user_edit_form(request: Request, user_id: int, user: dict = Depends(current_manager)):
     edit = usr.get_user(user_id)
     if not edit:
         raise HTTPException(404)
+    _require_managed_user(user, edit)
+    is_admin = user["role"] == "admin"
     plans = billing.list_plans(active_only=True)
     # Incluir el plan ya asignado aunque esté inactivo, para no desasignarlo sin querer.
     if edit.get("assigned_plan_id") and not any(p["id"] == edit["assigned_plan_id"] for p in plans):
@@ -1200,6 +1270,8 @@ def user_edit_form(request: Request, user_id: int, user: dict = Depends(current_
             "request": request, "user": user,
             "edit": edit, "flash": _pop_flash(request),
             "plans": plans,
+            "resellers": [u for u in usr.list_users() if u["role"] == "reseller"] if is_admin else [],
+            "actor_is_admin": is_admin,
         },
     )
 
@@ -1208,7 +1280,7 @@ def user_edit_form(request: Request, user_id: int, user: dict = Depends(current_
 def user_edit_submit(
     request: Request,
     user_id: int,
-    role: str = Form(...),
+    role: str = Form(""),
     company_name: str = Form(""),
     first_name: str = Form(""),
     last_name: str = Form(""),
@@ -1217,10 +1289,34 @@ def user_edit_submit(
     email: str = Form(""),
     telegram_chat_id: str = Form(""),
     plan_id: str = Form(""),
+    reseller_id: str = Form(""),
+    client_price: str = Form(""),
     new_password: str = Form(""),
-    user: dict = Depends(current_admin),
+    user: dict = Depends(current_manager),
 ):
     target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    _require_managed_user(user, target)
+    is_admin = user["role"] == "admin"
+    # Un revendedor no cambia el rol ni la asignación de revendedor de sus clientes.
+    if not is_admin or not role:
+        role = target["role"]  # se mantiene
+    # client_price (solo para clientes)
+    up_kwargs = {}
+    if role == "user":
+        if client_price.strip():
+            try:
+                up_kwargs["client_price"] = float(client_price.replace(",", "."))
+            except ValueError:
+                _flash(request, "El precio al cliente debe ser un número.", "error")
+                return RedirectResponse(f"/users/{user_id}/edit", status_code=303)
+        else:
+            up_kwargs["client_price"] = None
+        up_kwargs["set_client_price"] = True
+        if is_admin:  # solo el admin reasigna el revendedor dueño
+            up_kwargs["reseller_id"] = int(reseller_id) if reseller_id.strip() else None
+            up_kwargs["set_reseller"] = True
     try:
         # La quota la define el plan (no se pasa tenant_quota → update_user no la toca).
         usr.update_user(
@@ -1234,9 +1330,10 @@ def user_edit_submit(
             telegram_chat_id=telegram_chat_id,
             role=role,
             new_password=new_password or None,
+            **up_kwargs,
         )
         # Asignar/actualizar plan (define quota+precio+días). Solo rol cliente; para
-        # admin no aplica (ve todo). '— sin plan —' desasigna y deja quota en 0.
+        # admin/revendedor no aplica. '— sin plan —' desasigna y deja quota en 0.
         if role == "user":
             try:
                 billing.assign_plan(user_id, int(plan_id) if plan_id.strip() else None)
@@ -1252,10 +1349,11 @@ def user_edit_submit(
 
 
 @app.post("/users/{user_id}/reset-password")
-def user_reset_password(request: Request, user_id: int, user: dict = Depends(current_admin)):
+def user_reset_password(request: Request, user_id: int, user: dict = Depends(current_manager)):
     target = usr.get_user(user_id)
     if not target:
         raise HTTPException(404)
+    _require_managed_user(user, target)
     try:
         new_pwd = usr.reset_password(user_id)
         events.log("password_reset", "user", actor=user, target_user=target, severity="warn", ip=_client_ip(request))
@@ -1281,10 +1379,11 @@ def user_reset_password(request: Request, user_id: int, user: dict = Depends(cur
 
 
 @app.post("/users/{user_id}/toggle-active")
-def user_toggle_active(request: Request, user_id: int, user: dict = Depends(current_admin)):
+def user_toggle_active(request: Request, user_id: int, user: dict = Depends(current_manager)):
     target = usr.get_user(user_id)
     if not target:
         raise HTTPException(404)
+    _require_managed_user(user, target)
     if target["id"] == user["id"]:
         _flash(request, "No podés desactivarte a vos mismo.", "error")
         return RedirectResponse("/users", status_code=303)
@@ -1307,8 +1406,11 @@ def user_toggle_active(request: Request, user_id: int, user: dict = Depends(curr
 
 
 @app.post("/users/{user_id}/delete")
-def user_delete(request: Request, user_id: int, user: dict = Depends(current_admin)):
+def user_delete(request: Request, user_id: int, user: dict = Depends(current_manager)):
     target = usr.get_user(user_id)
+    if not target:
+        raise HTTPException(404)
+    _require_managed_user(user, target)
     try:
         usr.delete_user(user_id)
         events.log("user_deleted", "user", actor=user, target_user=target, severity="warn", ip=_client_ip(request))
